@@ -1,0 +1,41 @@
+# --- Private planning notes (kept local, not published) ---
+SPEC.md
+
+# --- Secrets (feature 74: never committed) ---
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# --- Source corpus (license-safe: PDFs are not redistributed) ---
+docs/**
+!docs/.gitkeep
+!docs/SOURCES.md
+
+# --- Generated artifacts: vector store, BM25 index, cache, logs ---
+data/**
+!data/.gitkeep
+eval/runs/**
+!eval/runs/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- Model caches (if pointed inside the repo) ---
+.cache/
+models/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

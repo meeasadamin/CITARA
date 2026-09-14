@@ -1,0 +1,81 @@
+[project]
+name = "citara"
+version = "0.1.0"
+description = "CITARA — citation-grounded RAG assistant over NDMA's published disaster-management corpus."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # PDF parsing + table extraction
+    "pymupdf>=1.26",
+    # Orchestration (LCEL) + chunking
+    "langchain>=1.0",
+    "langchain-core>=1.0",
+    "langchain-community>=0.4",
+    "langchain-text-splitters>=1.0",
+    "langchain-experimental>=0.4",
+    # Embeddings, reranking, vector store
+    "torch>=2.8",
+    "sentence-transformers>=5.0",
+    "langchain-huggingface>=1.0",
+    "chromadb>=1.0",
+    "langchain-chroma>=1.0",
+    # Sparse retrieval
+    "rank-bm25>=0.2.2",
+    # LLM providers (primary + failover)
+    "langchain-google-genai>=3.0",
+    "langchain-groq>=1.0",
+    # Resilience
+    "tenacity>=9.0",
+    # Configuration
+    "pydantic>=2.11",
+    "pydantic-settings>=2.10",
+    "python-dotenv>=1.1",
+    # Interface
+    "streamlit>=1.50",
+    # Evaluation / reporting
+    "numpy>=2.0",
+    "pandas>=2.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "ruff>=0.13",
+    "mypy>=1.18",
+    "psutil>=7.2.2",
+]
+
+# CPU-only PyTorch: keeps the install small locally and on Streamlit Community Cloud
+# (the default Linux torch wheel pulls multi-GB CUDA libraries).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/citara"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
