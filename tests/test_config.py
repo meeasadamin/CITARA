@@ -155,8 +155,11 @@ def test_fingerprint_ignores_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_derived_paths_sit_under_data_dir() -> None:
     s = make_settings()
     assert s.paths.chroma_dir == Path("data/chroma")
-    assert s.paths.bm25_path == Path("data/bm25/index.pkl")
+    # JSON, not a pickle: an index file that executes code on load does not belong in a
+    # public repository, and rebuilding BM25 costs milliseconds.
+    assert s.paths.bm25_path == Path("data/bm25/index.json")
     assert s.paths.manifest_path == Path("data/corpus_manifest.json")
+    assert s.paths.index_manifest_path == Path("data/index_manifest.json")
 
 
 def test_ensure_directories_creates_them(tmp_path: Path) -> None:

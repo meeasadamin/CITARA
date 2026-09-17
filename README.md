@@ -79,7 +79,7 @@ flowchart TD
 - [x] Corpus audit and provenance record — 19 documents, 1,391 pages ([`docs/SOURCES.md`](docs/SOURCES.md))
 - [x] Ingestion pipeline — 1,633 records from 1,232 pages, 512 Markdown tables, page-level provenance
 - [x] Chunking — 3,155 chunks, semantic splitting with page-range citations, 174 duplicates removed
-- [ ] Dense + sparse indexing
+- [x] Dense + sparse indexing — ChromaDB (cosine, tuned HNSW) + BM25 built in one pass, incremental rebuilds
 - [ ] Hybrid retrieval, fusion, reranking, relevance floor
 - [ ] Grounded generation with citations, refusal and provider failover
 - [ ] Guardrails (prompt-injection defense, scope control)

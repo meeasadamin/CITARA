@@ -42,7 +42,11 @@ class Embedder:
 
     @property
     def dimension(self) -> int:
-        return int(self.model.get_sentence_embedding_dimension() or 0)
+        # sentence-transformers 6 renamed this; keep working on either version.
+        getter = getattr(self.model, "get_embedding_dimension", None) or (
+            self.model.get_sentence_embedding_dimension
+        )
+        return int(getter() or 0)
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
         """Embed passages. No prefix: documents are the indexed side of the pair."""

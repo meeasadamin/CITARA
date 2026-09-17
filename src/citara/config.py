@@ -52,8 +52,19 @@ class Paths(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def bm25_path(self) -> Path:
-        """Serialised sparse index, built in the same pass as the dense one (feature 23)."""
-        return self.data_dir / "bm25" / "index.pkl"
+        """Sparse index, built in the same pass as the dense one (feature 23).
+
+        JSON rather than a pickle: rebuilding BM25 over a few thousand documents costs
+        milliseconds, and an index file that executes code on load is not something to ship
+        in a public repository.
+        """
+        return self.data_dir / "bm25" / "index.json"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def index_manifest_path(self) -> Path:
+        """What is currently indexed, enabling incremental rebuilds (feature 22)."""
+        return self.data_dir / "index_manifest.json"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
