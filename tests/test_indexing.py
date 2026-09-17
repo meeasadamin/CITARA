@@ -308,6 +308,46 @@ def test_new_document_is_added_incrementally(tmp_path: Path) -> None:
         store.close()
 
 
+def test_modified_document_replaces_its_old_chunks(tmp_path: Path) -> None:
+    """The case incremental rebuilds exist for: a document republished with new content.
+
+    Chunk ids are location-based, so a shorter revision leaves orphans behind unless the
+    document's old chunks are deleted first - the index would then answer from text that no
+    longer exists in the source.
+    """
+    settings = settings_for(tmp_path)
+    embedder = FakeEmbedder()
+    original = [
+        make_chunk("a1", "Monsoon advisory for 2025 season.", doc="monsoon", page=1),
+        make_chunk("a2", "Second page of the 2025 advisory.", doc="monsoon", page=2),
+    ]
+    write_corpus(tmp_path, original, embedder.embed_documents([c.content for c in original]))
+    build_index(settings, rebuild=True, embedder=embedder)  # type: ignore[arg-type]
+
+    # Republished: different content, one chunk shorter, new digest.
+    revised = [make_chunk("b1", "Monsoon advisory for 2026 season.", doc="monsoon", page=1)]
+    data = tmp_path / "data"
+    with (data / "chunks.jsonl").open("w", encoding="utf-8") as handle:
+        for chunk in revised:
+            handle.write(chunk.model_dump_json() + "\n")
+    np.save(data / "chunk_vectors.npy", embedder.embed_documents([c.content for c in revised]))
+    (data / "corpus_manifest.json").write_text(
+        json.dumps({"documents": [{"doc_id": "monsoon", "sha256": "sha-changed"}]}),
+        encoding="utf-8",
+    )
+
+    manifest = build_index(settings, embedder=embedder)  # type: ignore[arg-type]
+    assert manifest.chunk_count == 1
+
+    store = VectorStore(settings)
+    try:
+        assert store.count() == 1, "stale chunks from the previous revision survived"
+        hits = store.search(embedder.embed_query("monsoon advisory"), k=5)
+        assert [h.chunk_id for h in hits] == ["b1"]
+    finally:
+        store.close()
+
+
 def test_removed_document_is_dropped_from_the_index(tmp_path: Path) -> None:
     settings = settings_for(tmp_path)
     embedder = FakeEmbedder()

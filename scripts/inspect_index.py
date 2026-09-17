@@ -90,6 +90,45 @@ def main() -> int:
             ),
         ]
 
+        # Approximate search is only worth its speed if it finds what exhaustive search would.
+        # Brute force over the stored vectors is the ground truth at this corpus size.
+        vectors_path = data_dir / "chunk_vectors.npy"
+        if vectors_path.exists():
+            import numpy as np
+
+            vectors = np.load(vectors_path)
+            if vectors.shape[0] == len(chunks):
+                ids = [c.chunk_id for c in chunks]
+                norms = np.linalg.norm(vectors, axis=1)
+                top1 = 0
+                overlap = 0
+                for query in CONCEPTUAL + IDENTIFIER:
+                    query_vector = embedder.embed_query(query)
+                    exact = [ids[i] for i in np.argsort(-(vectors @ query_vector))[:5]]
+                    approximate = [h.chunk_id for h in store.search(query_vector, k=5)]
+                    top1 += bool(approximate) and approximate[0] == exact[0]
+                    overlap += len(set(approximate) & set(exact))
+                probes = len(CONCEPTUAL) + len(IDENTIFIER)
+                recall_at_5 = overlap / (5 * probes)
+                results.append(
+                    check(
+                        "vectors are unit-normalised",
+                        bool(np.allclose(norms, 1.0, atol=1e-4)),
+                        f"norms {norms.min():.4f}-{norms.max():.4f}",
+                    )
+                )
+                # An approximate index is not required to reproduce brute force exactly; it is
+                # required not to lose the best answer. Top-1 must be exact, and recall@5 is
+                # held to a threshold rather than to equality, since the reranker downstream
+                # sees roughly 24 candidates anyway.
+                results.append(
+                    check(
+                        "approximate search preserves the best answer",
+                        top1 == probes and recall_at_5 >= 0.95,
+                        f"top-1 {top1}/{probes} exact, recall@5 {recall_at_5:.3f}",
+                    )
+                )
+
         print("\nconceptual queries (no shared keywords - dense should win):")
         for query in CONCEPTUAL:
             dense = store.search(embedder.embed_query(query), k=1)
