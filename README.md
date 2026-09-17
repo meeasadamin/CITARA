@@ -77,7 +77,7 @@ flowchart TD
 
 - [x] Project scaffolding, pinned environment, CPU-only deployment profile
 - [x] Corpus audit and provenance record — 19 documents, 1,391 pages ([`docs/SOURCES.md`](docs/SOURCES.md))
-- [ ] Ingestion pipeline (provenance, normalisation, table extraction, manifest)
+- [x] Ingestion pipeline — 1,633 records from 1,232 pages, 512 Markdown tables, page-level provenance
 - [ ] Chunking (semantic + fallback, deduplication)
 - [ ] Dense + sparse indexing
 - [ ] Hybrid retrieval, fusion, reranking, relevance floor

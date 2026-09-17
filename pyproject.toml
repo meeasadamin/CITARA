@@ -76,6 +76,12 @@ strict = true
 ignore_missing_imports = true
 mypy_path = "src"
 
+# PyMuPDF ships only partial annotations, so strict mode rejects every call into it.
+# The exception is scoped to the two modules that touch the PDF API directly.
+[[tool.mypy.overrides]]
+module = ["citara.ingestion.loader", "citara.ingestion.tables"]
+disallow_untyped_calls = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
