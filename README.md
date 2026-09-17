@@ -76,7 +76,7 @@ flowchart TD
 ## Roadmap
 
 - [x] Project scaffolding, pinned environment, CPU-only deployment profile
-- [ ] Corpus audit and provenance record
+- [x] Corpus audit and provenance record — 19 documents, 1,391 pages ([`docs/SOURCES.md`](docs/SOURCES.md))
 - [ ] Ingestion pipeline (provenance, normalisation, table extraction, manifest)
 - [ ] Chunking (semantic + fallback, deduplication)
 - [ ] Dense + sparse indexing
