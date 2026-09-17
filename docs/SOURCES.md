@@ -60,7 +60,20 @@ Audited with `scripts/audit_corpus.py` on **2026-09-17**. Downloaded **2026-09-1
    figures *are* in prose (e.g. "PKR 800 billion (US$3,725 million)" for agriculture). Two
    consequences: table extraction is not optional for this corpus, and the gold question set must
    ask for damages in the form the corpus actually uses (PKR, with US$ in parentheses).
-7. **Table structure extracts noisily.** PyMuPDF's table finder recovers the *values* (verified:
+7. **Hyphenation here is compounds, not syllable splits.** All 77 distinct hyphen-at-line-end
+   cases in the raw corpus are real compounds — `high-risk`, `socio-economic`,
+   `well-coordinated`, `medium-term`. The spec assumed justified-text syllable hyphenation
+   (`inunda-tion`), which does not occur in these documents. Normalisation therefore keeps the
+   hyphen and removes only the line break: dropping it would yield "highrisk", which neither
+   retriever can match.
+8. **Embedded PDF titles are unreliable and reach the user.** The urban fire safety guidelines
+   carry the metadata title "Orange and White Illustrated Fire Safety Tips Poster" (a design
+   template name) and the mitigation plan carries "NDMA Report Final.cdr". Citations use the
+   curated filename unless it is an upload hash, in which case metadata is the fallback.
+9. **Chart axis labels survive as number runs.** 16 records (mostly NAP 2023 figures) contain
+   sequences like "27.5 25.0 22.5 1995 2025 2050" — text drawn inside chart images. No
+   extractor can give these structure; they are a known, reported gap.
+10. **Table structure extracts noisily.** PyMuPDF's table finder recovers the *values* (verified:
    `353,594` / `238,660` / `592,254` PKR million on the PDNA needs table) but merged header cells
    produce duplicated columns (`Col1|Col2|Col3`) and headers split across several rows. Chunking
    must collapse repeated columns, and pages where this fails need the fallback flag (feature 9)

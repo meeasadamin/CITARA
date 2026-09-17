@@ -26,7 +26,13 @@ _YEAR_RANGE = re.compile(
     # En and em dashes are intentional: NDMA titles use both in "2025-2030" ranges.
     r"(?<!\d)((?:19|20)\d{2})\s*[-–—]\s*(?:19|20)\d{2}(?!\d)"  # noqa: RUF001
 )
-_TITLE_NOISE = re.compile(r"^(microsoft word|untitled|document\d*|print|final)", re.IGNORECASE)
+# Toolchain and design-template artefacts that must never reach a citation.
+_TITLE_NOISE = re.compile(
+    r"^(microsoft word|untitled|document\d*|print|final|copy of)"
+    r"|\.(cdr|docx?|pptx?|indd|ai|psd|pdf)\b"
+    r"|\b(poster|template|canva|brochure|flyer)\b",
+    re.IGNORECASE,
+)
 # How much of a text block must sit inside a table before it counts as table content.
 _TABLE_OVERLAP = 0.6
 # Characters of body text sampled when deciding whether a document has a broken font encoding.
@@ -57,15 +63,27 @@ def guess_year(filename: str, metadata: dict[str, str], front_text: str) -> int 
 def derive_title(path: Path, metadata: dict[str, str]) -> str:
     """Readable title for citations.
 
-    Prefers the filename: NDMA PDF metadata is frequently a toolchain artefact
-    ("Microsoft Word - final_v3.docx"), which would make every citation unreadable.
+    The filename wins whenever it is descriptive, because embedded PDF metadata in this
+    corpus is unreliable in ways that show up directly in citations: the urban fire safety
+    guidelines carry the title "Orange and White Illustrated Fire Safety Tips Poster" (a
+    design-tool template name) and the mitigation plan carries "NDMA Report Final.cdr".
+    Metadata is used only when the filename itself is opaque, such as an upload hash.
     """
     stem = path.stem.replace("_", " ").replace("-", " ")
     stem = re.sub(r"\s+", " ", stem).strip()
+    if _is_descriptive(stem):
+        return stem
+
     embedded = (metadata.get("title") or "").strip()
-    if embedded and len(embedded) > 12 and not _TITLE_NOISE.match(embedded):
+    if embedded and len(embedded) > 12 and not _TITLE_NOISE.search(embedded):
         return embedded
     return stem
+
+
+def _is_descriptive(stem: str) -> bool:
+    """True when a filename stem reads as a document name rather than an upload hash."""
+    words = [w for w in re.split(r"\s+", stem) if len(w) > 2 and w.isalpha()]
+    return len(words) >= 2
 
 
 def _rect_overlap_ratio(block: tuple[float, float, float, float], table: pymupdf.Rect) -> float:

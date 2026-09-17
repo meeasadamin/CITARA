@@ -16,6 +16,7 @@ being indexed as noise.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from citara.config import IngestionSettings
@@ -25,13 +26,22 @@ if TYPE_CHECKING:  # pragma: no cover - import only for type checking
 
 # A placeholder header PyMuPDF invents when a column has no readable name.
 _PLACEHOLDER_PREFIX = "col"
+# Compound split across lines inside a cell: "Medium-\nterm".
+_CELL_HYPHEN_BREAK = re.compile(r"(\w)[-‐‑][ \t]*\n[ \t]*([a-z])")  # noqa: RUF001
 
 
 def _clean_cell(value: Any) -> str:
-    """Normalise one cell to a single-line string."""
+    """Normalise one cell to a single-line string.
+
+    Repairs line-broken compounds first. A cell holding "Medium-\\nterm" would otherwise
+    collapse to "Medium- term": cells are flattened to one line here, not by the prose
+    normaliser, which is why 540 such breaks survived inside tables after the prose path was
+    fixed.
+    """
     if value is None:
         return ""
-    return " ".join(str(value).split())
+    text = _CELL_HYPHEN_BREAK.sub(r"\1-\2", str(value))
+    return " ".join(text.split())
 
 
 def _collapse_duplicate_columns(rows: list[list[str]]) -> list[list[str]]:

@@ -50,7 +50,7 @@ _CORRUPTION_SIGNATURES = re.compile(
 )
 
 # Hyphen, non-breaking hyphen or Unicode hyphen at a line end, continued by a lowercase letter.
-_HYPHEN_BREAK = re.compile(r"(\w)[-‐‑]\n\s*([a-z])")  # noqa: RUF001 - Unicode hyphens intended
+_HYPHEN_BREAK = re.compile(r"(\w)[-‐‑][ \t]*\n[ \t]*([a-z])")  # noqa: RUF001 - Unicode hyphens
 _SINGLE_NEWLINE = re.compile(r"(?<!\n)\n(?!\n)")
 _MULTI_SPACE = re.compile(r"[ \t]{2,}")
 _MULTI_BLANK = re.compile(r"\n{3,}")
@@ -73,12 +73,18 @@ def repair_font_encoding(text: str) -> str:
 
 
 def dehyphenate(text: str) -> str:
-    """Rejoin words split across a line end ("inunda-\\ntion" -> "inundation").
+    """Repair words broken across a line end, keeping the hyphen.
 
-    Only joins when the continuation starts lowercase: "multi-\\nHazard" keeps its hyphen,
-    which matters for the compound terms this corpus is full of.
+    The spec assumed justified-text syllable hyphenation ("inunda-\\ntion" -> "inundation").
+    Scanning the raw corpus showed that pattern does not occur here: every one of the 77
+    distinct hyphen-at-line-end cases is a real compound - high-risk, socio-economic,
+    well-coordinated, medium-term. Dropping the hyphen would produce "highrisk", which
+    neither retriever can match, so the hyphen is kept and only the line break is removed.
+
+    Trailing spaces before the break are handled: without that, "Medium-\\nterm" survived as
+    "Medium- term" in 562 places once newlines were folded into spaces.
     """
-    return _HYPHEN_BREAK.sub(r"\1\2", text)
+    return _HYPHEN_BREAK.sub(r"\1-\2", text)
 
 
 def normalise_markdown(text: str, *, repair_font: bool = False) -> str:

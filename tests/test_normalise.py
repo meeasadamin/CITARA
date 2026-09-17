@@ -54,9 +54,21 @@ def test_legitimate_diacritics_survive_when_not_repairing() -> None:
     assert "naïve" not in repair_font_encoding(text)  # proves the repair would damage it
 
 
-def test_dehyphenation_joins_lowercase_continuations() -> None:
-    assert dehyphenate("inunda-\ntion") == "inundation"
-    assert dehyphenate("prepared-\n   ness") == "preparedness"
+def test_line_broken_compounds_keep_their_hyphen() -> None:
+    """Every hyphen-at-line-end case in this corpus is a compound, not a syllable split.
+
+    Dropping the hyphen would yield "highrisk" and "socioeconomic", which neither the dense
+    nor the sparse retriever can match against a user's "high-risk districts".
+    """
+    assert dehyphenate("high-\nrisk") == "high-risk"
+    assert dehyphenate("socio-\neconomic") == "socio-economic"
+    assert dehyphenate("well-\n   coordinated") == "well-coordinated"
+
+
+def test_trailing_space_before_the_break_is_handled() -> None:
+    """Regression: 'Medium-\\nterm' survived as 'Medium- term' in 562 places."""
+    assert dehyphenate("Medium- \nterm") == "Medium-term"
+    assert normalise_text("Medium- \nterm planning") == "Medium-term planning"
 
 
 def test_dehyphenation_keeps_compound_terms() -> None:

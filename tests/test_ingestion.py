@@ -222,13 +222,30 @@ def test_year_from_range_uses_publication_year() -> None:
     assert guess_year("no-year-here", {}, "") is None
 
 
-def test_title_prefers_filename_over_toolchain_metadata(tmp_path: Path) -> None:
-    path = tmp_path / "NDRP-2019-National-Disaster-Response-Plan.pdf"
-    assert derive_title(path, {"title": "Microsoft Word - ndrp_final_v3.docx"}).startswith("NDRP")
-    assert derive_title(path, {}) == "NDRP 2019 National Disaster Response Plan"
-    assert derive_title(path, {"title": "National Disaster Response Plan 2019"}) == (
-        "National Disaster Response Plan 2019"
+def test_descriptive_filename_always_wins_over_metadata(tmp_path: Path) -> None:
+    """Citations must not read 'Orange and White Illustrated Fire Safety Tips Poster'.
+
+    Both of these titles are real metadata from this corpus: a design-tool template name on
+    the fire safety guidelines, and a CorelDRAW filename on the mitigation plan.
+    """
+    fire = tmp_path / "NDMA-Urban-Fire-Safety-Guidelines-2026.pdf"
+    assert derive_title(
+        fire, {"title": "Orange and White Illustrated Fire Safety Tips Poster"}
+    ) == ("NDMA Urban Fire Safety Guidelines 2026")
+    plan = tmp_path / "NDMP-II-2023-National-Disaster-Mitigation-Plan.pdf"
+    assert derive_title(plan, {"title": "NDMA Report Final.cdr"}).startswith("NDMP")
+
+    ndrp = tmp_path / "NDRP-2019-National-Disaster-Response-Plan.pdf"
+    assert derive_title(ndrp, {}) == "NDRP 2019 National Disaster Response Plan"
+
+
+def test_opaque_filename_falls_back_to_metadata(tmp_path: Path) -> None:
+    """NDMA's own download URLs are upload hashes, so metadata is the better name there."""
+    path = tmp_path / "6a27bf8ac0ab0.pdf"
+    assert derive_title(path, {"title": "Monsoon Contingency Plan 2026"}) == (
+        "Monsoon Contingency Plan 2026"
     )
+    assert derive_title(path, {"title": "Microsoft Word - final_v3.docx"}) == "6a27bf8ac0ab0"
 
 
 def test_slugify() -> None:
@@ -313,6 +330,19 @@ def test_text_only_table_keeps_its_body_rows() -> None:
     markdown = to_markdown(rows)
     assert "| 1 | Navy | Karachi coast |" in markdown
     assert "| 2 | Army | Northern districts |" in markdown
+
+
+def test_cell_repairs_line_broken_compounds() -> None:
+    """Regression: 540 compounds stayed broken inside table cells.
+
+    Cells are flattened to one line here rather than by the prose normaliser, so the prose
+    fix did not reach them - "Medium-\\nterm" became "Medium- term" in the DRR Strategy.
+    """
+    from citara.ingestion.tables import _clean_cell
+
+    assert _clean_cell("Medium-\nterm") == "Medium-term"
+    assert _clean_cell("high-\n  risk") == "high-risk"
+    assert _clean_cell("Improved  resilience\nof assets") == "Improved resilience of assets"
 
 
 def test_header_only_table_is_rejected() -> None:
