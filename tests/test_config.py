@@ -52,6 +52,40 @@ def test_missing_keys_are_not_fatal() -> None:
     assert s.has_any_provider is False
 
 
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_blank_keys_count_as_missing(blank: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """.env ships GOOGLE_API_KEY= with no value; that must not read as a configured provider."""
+    monkeypatch.setenv("GOOGLE_API_KEY", blank)
+    monkeypatch.setenv("GROQ_API_KEY", blank)
+    s = make_settings()
+    assert s.google_api_key is None
+    assert s.groq_api_key is None
+    assert s.has_primary_provider is False
+    assert s.has_any_provider is False
+
+
+def test_real_key_still_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_realish_value")
+    s = make_settings()
+    assert s.has_primary_provider is False
+    assert s.has_any_provider is True
+
+
+def test_evaluation_defaults_cover_the_ablation_table() -> None:
+    s = make_settings()
+    assert s.evaluation.ablation_modes == ("dense", "sparse", "hybrid", "hybrid_rerank")
+    assert s.evaluation.hit_rate_k == (1, 3, 5)
+    assert s.evaluation.latency_percentiles == (50.0, 95.0)
+    assert s.evaluation.judge_temperature == 0.0
+
+
+def test_evidence_bands_must_be_ordered() -> None:
+    from citara.config import UiSettings
+
+    with pytest.raises(ValidationError):
+        UiSettings(evidence_strength_high=0.2, evidence_strength_moderate=0.5)
+
+
 def test_secrets_never_appear_in_dump_or_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "super-secret-value")
     s = make_settings()
@@ -78,7 +112,7 @@ def test_impossible_retrieval_funnels_are_rejected(field: str, value: int) -> No
     from citara.config import RetrievalSettings
 
     with pytest.raises(ValidationError):
-        RetrievalSettings(**{field: value})
+        RetrievalSettings(**{field: value})  # type: ignore[arg-type]
 
 
 def test_zero_weights_rejected() -> None:

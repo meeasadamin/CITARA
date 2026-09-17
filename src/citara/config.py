@@ -27,6 +27,7 @@ from pydantic import (
     Field,
     SecretStr,
     computed_field,
+    field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -65,6 +66,12 @@ class Paths(BaseModel):
     def cache_dir(self) -> Path:
         """Response cache (feature 49)."""
         return self.data_dir / "cache"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def query_log_path(self) -> Path:
+        """Non-identifying query log kept for evaluation (feature 46)."""
+        return self.data_dir / "queries.jsonl"
 
     def resolved(self, path: Path) -> Path:
         """Absolute form of *path*, anchored at the project root when relative."""
@@ -303,6 +310,62 @@ class ResilienceSettings(BaseModel):
     )
 
 
+class UiSettings(BaseModel):
+    """Interface presentation (features 53-65)."""
+
+    model_config = {"frozen": True}
+
+    page_title: str = "CITARA — NDMA Disaster Doctrine Assistant"
+    evidence_strength_high: float = Field(
+        default=0.60,
+        ge=0.0,
+        description=(
+            "Reranker score at or above which evidence reads as High. Derived from real scores, "
+            "never a fabricated percentage (feature 56). Calibrate with the floor in Phase 6."
+        ),
+    )
+    evidence_strength_moderate: float = Field(default=0.25, ge=0.0)
+    show_latency: bool = Field(default=True, description="Per-answer timings (feature 62).")
+    max_history_messages: int = Field(default=50, gt=0)
+    transcript_prefix: str = Field(default="citara-transcript", description="Export filename (63).")
+
+    @model_validator(mode="after")
+    def _check_bands(self) -> UiSettings:
+        if self.evidence_strength_high <= self.evidence_strength_moderate:
+            raise ValueError("evidence_strength_high must exceed evidence_strength_moderate")
+        return self
+
+
+class EvaluationSettings(BaseModel):
+    """Offline evaluation harness (features 66-71)."""
+
+    model_config = {"frozen": True}
+
+    gold_set_path: Path = Path("eval/gold_questions.json")
+    runs_dir: Path = Path("eval/runs")
+    hit_rate_k: tuple[int, ...] = Field(
+        default=(1, 3, 5), description="k values reported for Hit Rate@k (feature 67)."
+    )
+    ablation_modes: tuple[str, ...] = Field(
+        default=("dense", "sparse", "hybrid", "hybrid_rerank"),
+        description="The four rows of the ablation table (feature 70).",
+    )
+    latency_percentiles: tuple[float, ...] = Field(
+        default=(50.0, 95.0), description="Reported separately for retrieval and generation (71)."
+    )
+    judge_model: str = Field(
+        default="gemini-3.5-flash-lite",
+        description="Scores faithfulness and answer relevance (features 68, 69).",
+    )
+    judge_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _check_k(self) -> EvaluationSettings:
+        if not self.hit_rate_k or min(self.hit_rate_k) < 1:
+            raise ValueError("hit_rate_k must contain positive values")
+        return self
+
+
 class Settings(BaseSettings):
     """The single source of truth for runtime configuration."""
 
@@ -331,6 +394,19 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GROQ_API_KEY", "CITARA_GROQ_API_KEY"),
     )
 
+    @field_validator("google_api_key", "groq_api_key", mode="before")
+    @classmethod
+    def _blank_key_is_absent(cls, value: object) -> object:
+        """Treat ``GOOGLE_API_KEY=`` as missing, not as a key.
+
+        The env template ships the names with empty values, so without this an unconfigured
+        install reports a provider as available and fails mid-request instead of showing the
+        actionable 'missing API key' state (feature 65).
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     paths: Paths = Paths()
     ingestion: IngestionSettings = IngestionSettings()
     chunking: ChunkingSettings = ChunkingSettings()
@@ -339,6 +415,8 @@ class Settings(BaseSettings):
     generation: GenerationSettings = GenerationSettings()
     guardrails: GuardrailSettings = GuardrailSettings()
     resilience: ResilienceSettings = ResilienceSettings()
+    ui: UiSettings = UiSettings()
+    evaluation: EvaluationSettings = EvaluationSettings()
 
     @property
     def has_primary_provider(self) -> bool:
