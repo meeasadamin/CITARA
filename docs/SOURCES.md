@@ -54,3 +54,14 @@ Audited with `scripts/audit_corpus.py` on **2026-09-17**. Downloaded **2026-09-1
 4. **Scale gate passed:** 1,391 pages indexed, inside the 500–2,000 target.
 5. **Tables matter:** 343 tables detected, concentrated in PDNA 2022 (78 across both reports) and
    the DRR Strategy (79) — confirming table extraction as a first-class ingestion requirement.
+6. **PDNA headline figures live in tables, not prose.** The most-cited number in Pakistani disaster
+   management (total 2022 flood damages) does not appear as extractable body text: the executive
+   summary presents totals only in tables whose headers read `Total (PKR Billion)`. Sector-level
+   figures *are* in prose (e.g. "PKR 800 billion (US$3,725 million)" for agriculture). Two
+   consequences: table extraction is not optional for this corpus, and the gold question set must
+   ask for damages in the form the corpus actually uses (PKR, with US$ in parentheses).
+7. **Table structure extracts noisily.** PyMuPDF's table finder recovers the *values* (verified:
+   `353,594` / `238,660` / `592,254` PKR million on the PDNA needs table) but merged header cells
+   produce duplicated columns (`Col1|Col2|Col3`) and headers split across several rows. Chunking
+   must collapse repeated columns, and pages where this fails need the fallback flag (feature 9)
+   rather than silent indexing.
