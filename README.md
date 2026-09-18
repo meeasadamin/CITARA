@@ -1,4 +1,4 @@
-﻿# CITARA
+# CITARA
 
 **Citation-grounded AI assistant over Pakistan's national disaster-management doctrine.**
 
@@ -6,9 +6,9 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-CITARA is a retrieval-augmented generation (RAG) system that ingests NDMA's published policy corpus â€” the National
-Disaster Response Plan, the 2022 Floods Post-Disaster Needs Assessment, the National DRR Strategy 2025â€“2030, and
-monsoon, heatwave and GLOF advisories â€” and answers operational questions in natural language.
+CITARA is a retrieval-augmented generation (RAG) system that ingests NDMA's published policy corpus — the National
+Disaster Response Plan, the 2022 Floods Post-Disaster Needs Assessment, the National DRR Strategy 2025–2030, and
+monsoon, heatwave and GLOF advisories — and answers operational questions in natural language.
 
 Every answer carries **page-level citations** (e.g. *NDRP, p. 47*) so it can be verified before acting, and the system
 **refuses to answer** when the corpus holds no supporting evidence. In disaster response, a confident wrong answer is
@@ -21,7 +21,7 @@ more dangerous than no answer.
 
 ## The problem
 
-The doctrine already exists â€” written, approved and published. The bottleneck is retrieval: a district officer during a
+The doctrine already exists — written, approved and published. The bottleneck is retrieval: a district officer during a
 flood alert cannot keyword-search a 300-page response plan across several PDFs to find an evacuation trigger threshold.
 CITARA turns a static PDF archive into a queryable decision-support layer, cutting retrieval from minutes to seconds.
 
@@ -30,28 +30,28 @@ CITARA turns a static PDF archive into a queryable decision-support layer, cutti
 | Capability | Approach |
 |---|---|
 | Grounded answers | Strict grounding prompt, mandatory inline citations mapped to document + page |
-| Refusal by design | Calibrated reranker relevance floor â€” if no evidence clears it, generation never runs |
-| Retrieval quality | Hybrid dense (BGE) + sparse (BM25) retrieval, weighted reciprocal rank fusion, cross-encoder reranking |
+| Refusal by design | Relevance floor calibrated on the gold set — if no evidence clears it, generation never runs and no model is called |
+| Retrieval quality | Dense (BGE) + BM25 behind reciprocal rank fusion, with an ablation deciding the weights — measured, not assumed |
 | Follow-up questions | History-aware query rewriting over the last few turns |
 | Tables | PDF tables extracted and serialised to Markdown (critical for PDNA damage figures) |
 | Chunking | Semantic breakpoint chunking with deterministic recursive fallback and near-duplicate removal |
 | Security | Prompt-injection screening on user input **and** on retrieved document text |
 | Resilience | Retry with backoff, LLM provider failover, response caching, degraded mode returning cited sources |
-| Data sovereignty | Embeddings and reranking run locally on CPU â€” document content never leaves the host for indexing |
-| Evaluation | Gold question set, Hit Rate@k, MRR, faithfulness, answer relevance, p50/p95 latency, and an ablation study |
+| Data sovereignty | Embeddings and reranking run locally on CPU — document content never leaves the host for indexing |
+| Evaluation | 30-question gold set, Hit Rate@k, MRR, p50/p95 latency, and a five-configuration ablation that changed the defaults |
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A[NDMA PDFs] --> B[Ingestion<br/>page provenance Â· normalisation Â· tables â†’ Markdown]
-    B --> C[Chunking<br/>semantic + recursive fallback Â· dedup]
+    A[NDMA PDFs] --> B[Ingestion<br/>page provenance · normalisation · tables → Markdown]
+    B --> C[Chunking<br/>semantic + recursive fallback · dedup]
     C --> D[(ChromaDB<br/>BGE-small embeddings)]
     C --> E[(BM25 index)]
-    Q[User question] --> F[Query preparation<br/>injection screening Â· history rewrite Â· acronym expansion]
+    Q[User question] --> F[Query preparation<br/>injection screening · history rewrite · acronym expansion]
     F --> D & E
     D & E --> G[Fusion + cross-encoder reranking<br/>relevance floor]
-    G -- evidence found --> H[Grounded generation<br/>Gemini â†’ Groq failover]
+    G -- evidence found --> H[Grounded generation<br/>Gemini → Groq failover]
     G -- no evidence --> R[Refusal]
     H -- providers down --> X[Degraded mode<br/>cited source chunks]
     H --> I[Cited answer]
@@ -68,7 +68,7 @@ flowchart TD
 | Vector store | ChromaDB (persistent) |
 | Sparse retrieval | BM25 |
 | Reranking | `BAAI/bge-reranker-base` cross-encoder |
-| LLMs | Google Gemini (primary), Groq (failover) â€” free tier, model IDs configurable |
+| LLMs | Google Gemini (primary), Groq (failover) — free tier, model IDs configurable |
 | Interface | Streamlit |
 | Configuration | Pydantic Settings |
 | Tooling | uv, Ruff, mypy, pytest |
@@ -76,11 +76,11 @@ flowchart TD
 ## Roadmap
 
 - [x] Project scaffolding, pinned environment, CPU-only deployment profile
-- [x] Corpus audit and provenance record â€” 19 documents, 1,391 pages ([`docs/SOURCES.md`](docs/SOURCES.md))
-- [x] Ingestion pipeline â€” 1,633 records from 1,232 pages, 512 Markdown tables, page-level provenance
-- [x] Chunking â€” 3,155 chunks, semantic splitting with page-range citations, 174 duplicates removed
-- [x] Dense + sparse indexing â€” ChromaDB (cosine, tuned HNSW) + BM25 built in one pass, incremental rebuilds
-- [ ] Hybrid retrieval, fusion, reranking, relevance floor
+- [x] Corpus audit and provenance record — 19 documents, 1,391 pages ([`docs/SOURCES.md`](docs/SOURCES.md))
+- [x] Ingestion pipeline — 1,633 records from 1,232 pages, 512 Markdown tables, page-level provenance
+- [x] Chunking — 3,141 chunks, semantic splitting with page-range citations, 188 duplicates removed
+- [x] Dense + sparse indexing — ChromaDB (cosine, tuned HNSW) + BM25 built in one pass, incremental rebuilds
+- [x] Retrieval — dense + BM25, RRF fusion, cross-encoder gate, floor calibrated on the gold set ([`eval/RESULTS.md`](eval/RESULTS.md))
 - [x] Grounded generation — cited answers, refusal before any model call, Gemini to Groq failover, degraded mode
 - [ ] Guardrails (prompt-injection defense, scope control)
 - [ ] Streamlit interface
