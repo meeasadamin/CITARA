@@ -13,6 +13,7 @@ The officer still gets the correct source pages, which was the actual need (feat
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 
 from citara.config import Settings, get_settings
 from citara.generation.citations import build_citations, validate
@@ -126,6 +127,68 @@ class Answerer:
             )
 
         return answer
+
+    def stream(
+        self, question: str, history: list[str] | None = None
+    ) -> Iterator[tuple[str, GeneratedAnswer | None]]:
+        """Yield answer text as it arrives, then the finished answer.
+
+        Each item is ``(text_piece, None)`` while generating and ``("", answer)`` at the end,
+        so a caller can render tokens as they arrive and still receive validated citations.
+        Three seconds of blank screen reads as a crash in a live demo, which is the whole
+        reason this path exists (feature 41).
+
+        Refusals and degraded answers are not streamed: there is nothing being generated, so
+        the complete text is delivered in one piece.
+        """
+        outcome = self.retriever.retrieve(question, history=history)
+        if outcome.refused or not outcome.results:
+            answer = self.answer_from(question, outcome)
+            yield answer.text, answer
+            return
+
+        citations = build_citations(outcome.results)
+        user_prompt = build_user_prompt(question, outcome.results)
+        answer = GeneratedAnswer(
+            text="",
+            citations=citations,
+            evidence=outcome.results,
+            retrieval_ms=outcome.retrieval_ms + outcome.rerank_ms,
+        )
+        started = time.perf_counter()
+
+        for index, provider in enumerate(self.providers):
+            pieces: list[str] = []
+            try:
+                for piece in provider.stream(SYSTEM_PROMPT, user_prompt):
+                    pieces.append(piece)
+                    yield piece, None
+            except Exception as error:
+                log.warning(
+                    "streaming provider failed",
+                    extra={"provider": provider.name, "error": str(error)[:200]},
+                )
+                answer.error = f"{provider.name}: {type(error).__name__}"
+                # Anything already shown is discarded rather than spliced onto another
+                # provider's output, which would read as one answer contradicting itself.
+                continue
+
+            answer.text = "".join(pieces).strip()
+            answer.provider = provider.name
+            answer.model = provider.model
+            answer.failover_used = index > 0
+            answer.mode = "generated"
+            break
+        else:
+            answer = self._degrade(answer)
+            yield answer.text, None
+
+        answer.generation_ms = round((time.perf_counter() - started) * 1000, 1)
+        if answer.mode == "generated":
+            answer.invalid_markers, answer.uncited_sentences = validate(
+                answer.text, answer.citations
+            )
+        yield "", answer
 
     def _degrade(self, answer: GeneratedAnswer) -> GeneratedAnswer:
         """Return cited evidence verbatim when no provider can be reached."""

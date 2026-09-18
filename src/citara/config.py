@@ -291,7 +291,13 @@ class GenerationSettings(BaseModel):
         default=0.1,
         ge=0.0,
         le=2.0,
-        description="A policy assistant must not be creative; same question, same answer.",
+        description=(
+            "A policy assistant must not be creative; same question, same answer. NOTE: "
+            "gemini-3.5-flash-lite reports that it uses fixed sampling defaults and ignores "
+            "this value, so determinism there rests on the model's own defaults rather than "
+            "on configuration. The setting still applies to the Groq failover and to any "
+            "primary model that honours it."
+        ),
     )
     max_output_tokens: int = Field(default=1024, gt=0, description="Token cap (feature 40).")
     stream: bool = Field(default=True, description="Token-by-token rendering (feature 41).")

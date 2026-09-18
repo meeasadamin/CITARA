@@ -22,7 +22,20 @@ _MARKER = re.compile(r"\[(\d+)\]")
 # Sentences that assert nothing factual do not need a source.
 _NON_CLAIM = re.compile(
     r"^\s*(here (is|are)|the following|in summary|note that|according to the evidence|"
-    r"this (answer|information)|sources?:|based on)",
+    r"this (answer|information)|sources?:|based on|however[,]?\s*(the)?)",
+    re.IGNORECASE,
+)
+# Statements *about* the evidence rather than claims drawn from it. A refusal or a caveat
+# cannot cite a source, and flagging it as an uncited claim would penalise the system for
+# doing the right thing - saying the corpus does not contain something.
+_ABOUT_THE_EVIDENCE = re.compile(
+    r"(evidence|documents?|corpus|sources?|passages?)\s+"
+    r"(provided\s+)?(does|do|did)\s+not\s+(contain|include|state|specify|mention|provide)"
+    r"|(does|do)\s+not\s+(contain|include|state|specify|mention|provide)\s+"
+    r"(the\s+)?(specific|any|an?)\b"
+    r"|(is|are)\s+not\s+(stated|specified|mentioned|given|provided)\s+in\s+the\s+"
+    r"(evidence|documents?|corpus)"
+    r"|i\s+(could|can)\s?not\s+find",
     re.IGNORECASE,
 )
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
@@ -56,6 +69,8 @@ def count_uncited_claims(text: str) -> int:
     for sentence in _SENTENCE.split(text.strip()):
         body = sentence.strip()
         if len(body) < _MIN_CLAIM_CHARS or _NON_CLAIM.match(body):
+            continue
+        if _ABOUT_THE_EVIDENCE.search(body):
             continue
         if not _MARKER.search(body):
             uncited += 1
