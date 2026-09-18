@@ -15,8 +15,13 @@ docs/**
 # --- Generated artifacts: vector store, BM25 index, cache, logs ---
 data/**
 !data/.gitkeep
+# Evaluation runs are evidence, not build output: a published table is worth little without
+# the measurements and configuration fingerprints behind it, so the records are versioned.
 eval/runs/**
 !eval/runs/.gitkeep
+!eval/runs/*.json
+# ...except working caches, which are reproducible and large.
+eval/runs/*cache*.json
 
 # --- Python ---
 __pycache__/

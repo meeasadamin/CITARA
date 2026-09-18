@@ -1,0 +1,197 @@
+{
+  "generated_at": "2026-09-18T17:05:12.771444+00:00",
+  "mode": "sparse",
+  "config_fingerprint": "8b7cc1666c54",
+  "hit_rate": {
+    "1": 0.08333333333333333,
+    "3": 0.25,
+    "5": 0.3333333333333333
+  },
+  "mrr": 0.18055555555555555,
+  "questions": [
+    {
+      "id": "c01",
+      "category": "conceptual",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "c02",
+      "category": "conceptual",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "c03",
+      "category": "conceptual",
+      "rank": 2,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "c04",
+      "category": "conceptual",
+      "rank": 1,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "c05",
+      "category": "conceptual",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "c06",
+      "category": "conceptual",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "i01",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "i02",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "i03",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "i04",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "i05",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "i06",
+      "category": "identifier",
+      "rank": 1,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "t01",
+      "category": "table",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "t02",
+      "category": "table",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "t03",
+      "category": "table",
+      "rank": 3,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "t04",
+      "category": "table",
+      "rank": 2,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "t05",
+      "category": "table",
+      "rank": 4,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "p01",
+      "category": "procedural",
+      "rank": 4,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "p02",
+      "category": "procedural",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "p03",
+      "category": "procedural",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "m01",
+      "category": "multi_hop",
+      "rank": 2,
+      "best_score": 0.00819672131147541,
+      "found_by": [
+        "sparse"
+      ]
+    },
+    {
+      "id": "m02",
+      "category": "multi_hop",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "f01",
+      "category": "follow_up",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "f02",
+      "category": "follow_up",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    }
+  ]
+}

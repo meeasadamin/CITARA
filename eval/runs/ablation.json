@@ -1,0 +1,138 @@
+{
+  "generated_at": "2026-09-18T20:03:13.648401+00:00",
+  "gold_questions": 24,
+  "refusal_cases": 6,
+  "relevance_floor": 0.3386,
+  "rows": [
+    {
+      "name": "dense",
+      "mode": "dense",
+      "dense_weight": 1.0,
+      "sparse_weight": 0.0,
+      "rationale": "Semantic search alone. Strong on paraphrase, structurally blind to exact tokens.",
+      "fingerprint": "c31f38749a20",
+      "hit_rate": {
+        "1": 0.125,
+        "3": 0.3333333333333333,
+        "5": 0.4583333333333333
+      },
+      "mrr": 0.23750000000000002,
+      "by_category": {
+        "conceptual": 0.5,
+        "follow_up": 0.0,
+        "identifier": 0.5,
+        "multi_hop": 0.5,
+        "procedural": 0.3333333333333333,
+        "table": 0.6
+      },
+      "retrieval_p50_ms": 60.4,
+      "retrieval_p95_ms": 142.6,
+      "unanswerable_admitted": 6,
+      "unanswerable_total": 6
+    },
+    {
+      "name": "sparse",
+      "mode": "sparse",
+      "dense_weight": 0.0,
+      "sparse_weight": 1.0,
+      "rationale": "BM25 alone. Finds identifiers a vector discards, misses everything worded differently.",
+      "fingerprint": "cdc5aa49fd78",
+      "hit_rate": {
+        "1": 0.08333333333333333,
+        "3": 0.25,
+        "5": 0.3333333333333333
+      },
+      "mrr": 0.18055555555555555,
+      "by_category": {
+        "conceptual": 0.3333333333333333,
+        "follow_up": 0.0,
+        "identifier": 0.16666666666666666,
+        "multi_hop": 0.5,
+        "procedural": 0.3333333333333333,
+        "table": 0.6
+      },
+      "retrieval_p50_ms": 12.4,
+      "retrieval_p95_ms": 17.7,
+      "unanswerable_admitted": 6,
+      "unanswerable_total": 6
+    },
+    {
+      "name": "hybrid",
+      "mode": "hybrid",
+      "dense_weight": 0.5,
+      "sparse_weight": 0.5,
+      "rationale": "Even reciprocal rank fusion of both retrievers, as the specification proposed.",
+      "fingerprint": "456cd62a48c8",
+      "hit_rate": {
+        "1": 0.16666666666666666,
+        "3": 0.25,
+        "5": 0.375
+      },
+      "mrr": 0.22847222222222222,
+      "by_category": {
+        "conceptual": 0.5,
+        "follow_up": 0.0,
+        "identifier": 0.3333333333333333,
+        "multi_hop": 0.5,
+        "procedural": 0.0,
+        "table": 0.6
+      },
+      "retrieval_p50_ms": 56.1,
+      "retrieval_p95_ms": 67.4,
+      "unanswerable_admitted": 6,
+      "unanswerable_total": 6
+    },
+    {
+      "name": "hybrid + rerank",
+      "mode": "hybrid_rerank",
+      "dense_weight": 0.5,
+      "sparse_weight": 0.5,
+      "rationale": "Even fusion, then the cross-encoder scores the selected chunks.",
+      "fingerprint": "31c7e981e7cb",
+      "hit_rate": {
+        "1": 0.125,
+        "3": 0.2916666666666667,
+        "5": 0.375
+      },
+      "mrr": 0.20625000000000002,
+      "by_category": {
+        "conceptual": 0.5,
+        "follow_up": 0.0,
+        "identifier": 0.3333333333333333,
+        "multi_hop": 0.5,
+        "procedural": 0.0,
+        "table": 0.6
+      },
+      "retrieval_p50_ms": 3503.1,
+      "retrieval_p95_ms": 4604.0,
+      "unanswerable_admitted": 0,
+      "unanswerable_total": 6
+    },
+    {
+      "name": "dense + rerank gate",
+      "mode": "hybrid_rerank",
+      "dense_weight": 1.0,
+      "sparse_weight": 0.0,
+      "rationale": "Dense ranking with the cross-encoder as the refusal gate. The shipped default.",
+      "fingerprint": "2ce5464c76dd",
+      "hit_rate": {
+        "1": 0.16666666666666666,
+        "3": 0.2916666666666667,
+        "5": 0.4583333333333333
+      },
+      "mrr": 0.2548611111111111,
+      "by_category": {
+        "conceptual": 0.5,
+        "follow_up": 0.0,
+        "identifier": 0.5,
+        "multi_hop": 0.5,
+        "procedural": 0.3333333333333333,
+        "table": 0.6
+      },
+      "retrieval_p50_ms": 3308.3,
+      "retrieval_p95_ms": 4335.5,
+      "unanswerable_admitted": 0,
+      "unanswerable_total": 6
+    }
+  ]
+}

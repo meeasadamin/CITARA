@@ -1,0 +1,203 @@
+{
+  "generated_at": "2026-09-18T17:05:41.707214+00:00",
+  "mode": "hybrid",
+  "config_fingerprint": "73eda3cbe835",
+  "hit_rate": {
+    "1": 0.16666666666666666,
+    "3": 0.25,
+    "5": 0.375
+  },
+  "mrr": 0.22847222222222222,
+  "questions": [
+    {
+      "id": "c01",
+      "category": "conceptual",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "c02",
+      "category": "conceptual",
+      "rank": null,
+      "best_score": 0.016133229247983348,
+      "found_by": []
+    },
+    {
+      "id": "c03",
+      "category": "conceptual",
+      "rank": 1,
+      "best_score": 0.01626123744050767,
+      "found_by": [
+        "both"
+      ]
+    },
+    {
+      "id": "c04",
+      "category": "conceptual",
+      "rank": 1,
+      "best_score": 0.01639344262295082,
+      "found_by": [
+        "both"
+      ]
+    },
+    {
+      "id": "c05",
+      "category": "conceptual",
+      "rank": null,
+      "best_score": 0.015889029003783105,
+      "found_by": []
+    },
+    {
+      "id": "c06",
+      "category": "conceptual",
+      "rank": 5,
+      "best_score": 0.016133229247983348,
+      "found_by": [
+        "both",
+        "dense",
+        "sparse"
+      ]
+    },
+    {
+      "id": "i01",
+      "category": "identifier",
+      "rank": 5,
+      "best_score": 0.01639344262295082,
+      "found_by": [
+        "both",
+        "dense",
+        "sparse"
+      ]
+    },
+    {
+      "id": "i02",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.015289449112978524,
+      "found_by": []
+    },
+    {
+      "id": "i03",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.015749007936507936,
+      "found_by": []
+    },
+    {
+      "id": "i04",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.014709063378758382,
+      "found_by": []
+    },
+    {
+      "id": "i05",
+      "category": "identifier",
+      "rank": null,
+      "best_score": 0.015527202696196438,
+      "found_by": []
+    },
+    {
+      "id": "i06",
+      "category": "identifier",
+      "rank": 2,
+      "best_score": 0.016009221311475412,
+      "found_by": [
+        "both"
+      ]
+    },
+    {
+      "id": "t01",
+      "category": "table",
+      "rank": null,
+      "best_score": 0.016129032258064516,
+      "found_by": []
+    },
+    {
+      "id": "t02",
+      "category": "table",
+      "rank": null,
+      "best_score": 0.015268065268065269,
+      "found_by": []
+    },
+    {
+      "id": "t03",
+      "category": "table",
+      "rank": 1,
+      "best_score": 0.015512265512265512,
+      "found_by": [
+        "both"
+      ]
+    },
+    {
+      "id": "t04",
+      "category": "table",
+      "rank": 4,
+      "best_score": 0.016009221311475412,
+      "found_by": [
+        "both"
+      ]
+    },
+    {
+      "id": "t05",
+      "category": "table",
+      "rank": 1,
+      "best_score": 0.015504807692307693,
+      "found_by": [
+        "both"
+      ]
+    },
+    {
+      "id": "p01",
+      "category": "procedural",
+      "rank": null,
+      "best_score": 0.01575682382133995,
+      "found_by": []
+    },
+    {
+      "id": "p02",
+      "category": "procedural",
+      "rank": null,
+      "best_score": 0.015512265512265512,
+      "found_by": []
+    },
+    {
+      "id": "p03",
+      "category": "procedural",
+      "rank": null,
+      "best_score": 0.016133229247983348,
+      "found_by": []
+    },
+    {
+      "id": "m01",
+      "category": "multi_hop",
+      "rank": 3,
+      "best_score": 0.01626123744050767,
+      "found_by": [
+        "both"
+      ]
+    },
+    {
+      "id": "m02",
+      "category": "multi_hop",
+      "rank": null,
+      "best_score": 0.015889029003783105,
+      "found_by": []
+    },
+    {
+      "id": "f01",
+      "category": "follow_up",
+      "rank": null,
+      "best_score": 0.00819672131147541,
+      "found_by": []
+    },
+    {
+      "id": "f02",
+      "category": "follow_up",
+      "rank": null,
+      "best_score": 0.016133229247983348,
+      "found_by": []
+    }
+  ]
+}
