@@ -107,6 +107,14 @@ class VectorStore:
         """Remove every chunk of one document, for incremental rebuilds (feature 22)."""
         self.collection.delete(where={"doc_id": doc_id})
 
+    def _query(self, query_vector: np.ndarray, k: int, where: dict[str, Any] | None) -> Any:
+        return self.collection.query(
+            query_embeddings=[query_vector.tolist()],
+            n_results=k,
+            where=where or None,
+            include=["documents", "metadatas", "distances"],
+        )
+
     def search(
         self, query_vector: np.ndarray, k: int = 12, where: dict[str, Any] | None = None
     ) -> list[DenseHit]:
@@ -115,12 +123,17 @@ class VectorStore:
         Chroma returns cosine *distance*; it is converted to similarity here so every score
         in the pipeline means the same thing: higher is better, 1.0 is identical.
         """
-        result = self.collection.query(
-            query_embeddings=[query_vector.tolist()],
-            n_results=k,
-            where=where or None,
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            result = self._query(query_vector, k, where)
+        except chromadb.errors.NotFoundError:
+            # The collection handle is stale: a rebuild replaced it underneath this process.
+            # Reconnecting once turns a crash into a transparent recovery; if it is genuinely
+            # gone, the error that follows names the real problem.
+            log.warning("vector collection handle was stale; reconnecting")
+            self.collection = self.client.get_or_create_collection(
+                name=self.settings.embedding.collection_name
+            )
+            result = self._query(query_vector, k, where)
         ids = result.get("ids") or [[]]
         if not ids or not ids[0]:
             return []

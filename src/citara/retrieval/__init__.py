@@ -1,6 +1,7 @@
 """[5-6] Query prep, hybrid retrieval, RRF fusion, reranking, relevance floor (features 24-33)."""
 
 from citara.retrieval.fusion import reciprocal_rank_fusion
+from citara.retrieval.llm_rewriter import LLMRewriter
 from citara.retrieval.models import RetrievalOutcome, RetrievedChunk
 from citara.retrieval.query import (
     ACRONYMS,
@@ -17,6 +18,7 @@ __all__ = [
     "CrossEncoderReranker",
     "HeuristicRewriter",
     "HybridRetriever",
+    "LLMRewriter",
     "RetrievalOutcome",
     "RetrievedChunk",
     "expand_acronyms",

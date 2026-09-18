@@ -27,6 +27,7 @@ from citara.indexing.sparse_index import SparseHit, SparseIndex
 from citara.indexing.vector_store import DenseHit, VectorStore
 from citara.log import get_logger, stage
 from citara.retrieval.fusion import reciprocal_rank_fusion
+from citara.retrieval.llm_rewriter import LLMRewriter
 from citara.retrieval.models import RetrievalOutcome
 from citara.retrieval.query import Rewriter, prepare
 from citara.retrieval.reranker import CrossEncoderReranker
@@ -56,7 +57,10 @@ class HybridRetriever:
         )
         loaded = chunks if chunks is not None else load_chunks(data_dir / "chunks.jsonl")
         self.chunks_by_id: dict[str, Chunk] = {c.chunk_id: c for c in loaded}
-        self.rewriter = rewriter
+        # A model rewrites follow-ups far better than the heuristic, but the heuristic is what
+        # keeps retrieval working when no key is configured or the provider is unreachable.
+        # Construction is lazy, so this costs nothing until a follow-up actually arrives.
+        self.rewriter = rewriter or LLMRewriter(self.settings)
         self.reranker = reranker or CrossEncoderReranker(self.settings.retrieval)
 
     # -- filtering ------------------------------------------------------------------

@@ -287,3 +287,71 @@ def test_evidence_strength_bands() -> None:
 def test_evidence_strength_is_none_without_results() -> None:
     outcome = RetrievalOutcome(query="q", rewritten_query="q")
     assert outcome.evidence_strength(0.6, 0.25) == "None"
+
+
+# --- LLM-backed rewriting (feature 30) ----------------------------------------------
+
+
+class FakeResponse:
+    def __init__(self, content: object) -> None:
+        self.content = content
+
+
+class FakeModel:
+    def __init__(self, content: object, fail: bool = False) -> None:
+        self.content = content
+        self.fail = fail
+        self.calls = 0
+
+    def invoke(self, prompt: str) -> FakeResponse:
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("provider unreachable")
+        return FakeResponse(self.content)
+
+
+def llm_rewriter_with(model: object) -> object:
+    from citara.retrieval.llm_rewriter import LLMRewriter
+
+    rewriter = LLMRewriter(Settings(_env_file=None))  # type: ignore[call-arg]
+    rewriter._client = model  # type: ignore[attr-defined]
+    return rewriter
+
+
+def test_llm_rewriter_reads_structured_content_blocks() -> None:
+    """Regression: LangChain 1.x returns content blocks, so str() yields a list repr."""
+    blocks = [{"type": "text", "text": "What were the total recovery needs in Sindh?"}]
+    rewriter = llm_rewriter_with(FakeModel(blocks))
+    result = rewriter.rewrite("What about Sindh?", ["What were the total recovery needs?"])  # type: ignore[attr-defined]
+    assert result == "What were the total recovery needs in Sindh?"
+
+
+def test_llm_rewriter_accepts_plain_string_content() -> None:
+    rewriter = llm_rewriter_with(FakeModel("Standalone question about Sindh?"))
+    assert rewriter.rewrite("What about Sindh?", ["earlier turn?"]) == (  # type: ignore[attr-defined]
+        "Standalone question about Sindh?"
+    )
+
+
+def test_llm_rewriter_falls_back_when_the_provider_fails() -> None:
+    """A rewriting outage must degrade retrieval, not break it."""
+    rewriter = llm_rewriter_with(FakeModel(None, fail=True))
+    result = rewriter.rewrite("What about Sindh?", ["What were the recovery needs?"])  # type: ignore[attr-defined]
+    assert "sindh" in result.lower()
+    assert "recovery" in result.lower()  # heuristic carried the previous turn
+
+
+def test_llm_rewriter_rejects_an_essay() -> None:
+    """A long reply means the model explained instead of rewriting."""
+    rewriter = llm_rewriter_with(FakeModel("word " * 200))
+    result = rewriter.rewrite("What about Sindh?", ["What were the recovery needs?"])  # type: ignore[attr-defined]
+    assert len(result) < 300
+
+
+def test_llm_rewriter_leaves_standalone_questions_alone() -> None:
+    """No provider call at all when the question already stands on its own."""
+    model = FakeModel("should not be used")
+    rewriter = llm_rewriter_with(model)
+    question = "What is the monsoon contingency plan for Balochistan?"
+    assert rewriter.rewrite(question, ["earlier turn?"]) == question  # type: ignore[attr-defined]
+    assert model.calls == 0

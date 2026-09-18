@@ -207,8 +207,26 @@ class RetrievalSettings(BaseModel):
     rrf_k: int = Field(
         default=60, gt=0, description="Reciprocal rank fusion constant: score = w / (rrf_k + rank)."
     )
-    dense_weight: float = Field(default=0.5, ge=0.0)
-    sparse_weight: float = Field(default=0.5, ge=0.0)
+    dense_weight: float = Field(
+        default=1.0,
+        ge=0.0,
+        description=(
+            "Fusion weight for vector search. Set from the ablation, not from the spec: on "
+            "the current gold set dense retrieval alone reaches Hit@5 0.458 while an even "
+            "hybrid reaches 0.375, so BM25 is weighted out of the ranking by default."
+        ),
+    )
+    sparse_weight: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Fusion weight for BM25. Zero by default because the measurement does not yet "
+            "support it - not because sparse retrieval is useless. BM25 still runs and its "
+            "candidates stay in the pool, and it remains the only retriever that can match an "
+            "exact section number or phone number. Raise this and re-run the ablation once "
+            "the gold set is larger than 24 questions, where a two-question swing is noise."
+        ),
+    )
     rerank_candidates: int = Field(
         default=24, gt=0, description="Shortlist size handed to the cross-encoder."
     )
@@ -216,15 +234,17 @@ class RetrievalSettings(BaseModel):
     reranker_model: str = "BAAI/bge-reranker-base"
     reranker_batch_size: int = Field(default=16, gt=0)
     relevance_floor: float = Field(
-        default=0.45,
+        default=0.3386,
         description=(
-            "Reranker score below which evidence is discarded; if nothing clears it, the system "
-            "refuses (feature 29). CALIBRATED on the gold set, not chosen by intuition: "
-            "answerable questions score a median 0.92 against 0.077 for unanswerable ones, and "
-            "0.45 admits none of the unanswerable questions. It refuses three answerable ones, "
-            "but retrieval had already missed the evidence for two of those, so refusing them "
-            "is correct; the genuine cost is one question. See scripts/calibrate_floor.py and "
-            "eval/runs/floor_calibration.json."
+            "Reranker score below which evidence is discarded; if nothing clears it, the "
+            "system refuses (feature 29). CALIBRATED on the gold set rather than chosen: it "
+            "admits none of the unanswerable questions and refuses no question whose evidence "
+            "was actually retrieved. The four questions it does refuse are ones retrieval had "
+            "already missed, where answering would mean answering without support. The value "
+            "is a midpoint between observed scores, not a round number, because admission "
+            "uses >= and a threshold sitting exactly on an observed score admits it. Re-run "
+            "scripts/calibrate_floor.py after any change to chunking, retrieval or the "
+            "reranker; see eval/runs/floor_calibration.json."
         ),
     )
     use_logit_scores: bool = Field(
