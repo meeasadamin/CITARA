@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "description": "CITARA gold question set. Questions are phrased as a district or provincial officer would ask them, deliberately NOT in the document's own wording: a question copied from the passage it targets is trivially retrievable and would flatter every retriever equally. Each answerable item records the document, page and a verbatim quote so it can be checked against the source PDF. Status is 'drafted' until a human has confirmed it against the PDF; every metric computed from this set inherits that verification. PAGE NUMBERS ARE PDF PAGE POSITIONS - what a PDF viewer shows - not the printed page numbers in the document footer. Measured offsets differ per document (typically PDF = printed + 1, but 0 for the NDMP 2025 and summer hazards plan, and -1 for the April 2026 heatwave advisory), so verify by jumping to the page number in a viewer rather than by reading the footer.",
+  "questions": [
+    {
+      "id": "c01",
+      "question": "What should people do when floodwater starts rising near their homes?",
+      "category": "conceptual",
+      "expected_answer": "Life safety comes first: people stranded or isolated by rising water are rescued and evacuated, moved to temporary shelters and safe evacuation routes away from flood-prone areas, with evacuation prioritised over protecting assets.",
+      "sources": [
+        {"doc_id": "ndma-monsoon-contingency-plan-2026", "page_start": 42, "page_end": 43, "quote": "Prioritise the rescue and evacuation of individuals stranded or isolated by rising water levels in riverine flood situations."},
+        {"doc_id": "ndma-monsoon-contingency-plan-2026", "page_start": 46, "page_end": 47, "quote": "Response Priorities (1) Life safety; evacuation, SAR, emergency medical care and protection of vulnerable people."}
+      ],
+      "status": "drafted",
+      "notes": "Tests paraphrase retrieval: the question shares no keywords with 'riverine flood situations' or 'response priorities'."
+    },
+    {
+      "id": "c02",
+      "question": "Who is responsible for watching the weather and warning the provinces before a disaster?",
+      "category": "conceptual",
+      "expected_answer": "The National Emergency Operations Centre (NEOC) continuously monitors evolving weather patterns and disseminates warnings to provincial and district authorities.",
+      "sources": [{"doc_id": "ndma-contingency-plan-june2025", "page_start": 9, "page_end": 9, "quote": "National Emergency Operations Centre (NEOC). Will continuously monitor evolving weather patterns"}],
+      "status": "drafted"
+    },
+    {
+      "id": "c03",
+      "question": "Who has the power to formally declare an area disaster-hit?",
+      "category": "conceptual",
+      "expected_answer": "The District and Provincial Authorities declare an area 'calamity affected'; a technical committee is normally formed to assess the situation.",
+      "sources": [{"doc_id": "ndmp-ii-2023-national-disaster-mitigation-plan", "page_start": 46, "page_end": 46, "quote": "the District and Provincial Authority declare the area “calamity Affected”"}],
+      "status": "drafted"
+    },
+    {
+      "id": "c04",
+      "question": "What is NDMA's legal mandate in a national emergency?",
+      "category": "conceptual",
+      "expected_answer": "Under the National Disaster Management Act 2010, NDMA is the apex federal coordination authority for disaster management in Pakistan.",
+      "sources": [{"doc_id": "ndma-industrial-technical-disasters-contingency-plan-2026", "page_start": 12, "page_end": 13, "quote": "Under National Disaster Management Act, 2010, NDMA serves as the apex federal coordination authority for disaster management"}],
+      "status": "drafted"
+    },
+    {
+      "id": "c05",
+      "question": "How does the country prepare for extreme heat before summer begins?",
+      "category": "conceptual",
+      "expected_answer": "Measures include identifying high-risk areas, establishing heatstroke treatment centres with medical staff and water supplies, establishing control rooms for the heatwave season, and supporting vulnerable populations.",
+      "sources": [{"doc_id": "ndma-heatwave-advisory-april-2026", "page_start": 1, "page_end": 3, "quote": "Identification of high-risk areas and establishment of heatstroke treatment centers equipped with medical staff"}],
+      "status": "drafted"
+    },
+    {
+      "id": "c06",
+      "question": "What does the global framework say countries must do first to reduce disaster risk?",
+      "category": "conceptual",
+      "expected_answer": "Sendai Priority 1 is understanding disaster risk; the four priorities are understanding risk, strengthening governance, investing in resilience, and enhancing preparedness for effective response and build back better.",
+      "sources": [{"doc_id": "sendai-framework-drr-2015-2030", "page_start": 13, "page_end": 13, "quote": "Priority 1: Understanding disaster risk. Priority 2: Strengthening disaster risk governance"}],
+      "status": "drafted"
+    },
+
+    {
+      "id": "i01",
+      "question": "How many people died in the Quetta earthquake?",
+      "category": "identifier",
+      "expected_answer": "Approximately 60,000 deaths, from an earthquake of magnitude 7.7 listed in the NDRP's historical earthquake table.",
+      "sources": [{"doc_id": "ndrp-2019-national-disaster-response-plan", "page_start": 46, "page_end": 46, "quote": "Quetta 7.7 60,000"}],
+      "status": "drafted",
+      "notes": "Exact place-name lookup. 'Quetta' was unsearchable before the Phase 2 font repair ('QueƩa')."
+    },
+    {
+      "id": "i02",
+      "question": "What does GLOF stand for?",
+      "category": "identifier",
+      "expected_answer": "Glacial Lake Outburst Flood.",
+      "sources": [{"doc_id": "nap-2023-national-adaptation-plan", "page_start": 6, "page_end": 6, "quote": "GLOF Glacial Lake Outburst Flood"}],
+      "status": "drafted",
+      "notes": "Acronym expansion (feature 32). Answer sits in an abbreviations list, which is hostile to dense retrieval."
+    },
+    {
+      "id": "i03",
+      "question": "Which months does NDMA treat as the monsoon period?",
+      "category": "identifier",
+      "expected_answer": "Monsoon is July to September; the pre-monsoon period is April to June.",
+      "sources": [{"doc_id": "ndma-contingency-plan-june2025", "page_start": 17, "page_end": 18, "quote": "Pre-Monsoon (April - June) and Monsoon (July - September) periods"}],
+      "status": "drafted"
+    },
+    {
+      "id": "i04",
+      "question": "What is the NDMA contact telephone number given in the contingency plan?",
+      "category": "identifier",
+      "expected_answer": "051-9087133, listed for the Brigadier signing for the Chairman NDMA.",
+      "sources": [{"doc_id": "ndma-contingency-plan-june2025", "page_start": 56, "page_end": 57, "quote": "For Chairman NDMA (Kamran Ahmed) Tel: 051-9087133"}],
+      "status": "drafted",
+      "notes": "A phone number is the clearest case of a token embeddings discard entirely."
+    },
+    {
+      "id": "i05",
+      "question": "Which areas is INSaR Team 1 responsible for?",
+      "category": "identifier",
+      "expected_answer": "KP, AJ&K and Gilgit-Baltistan.",
+      "sources": [{"doc_id": "insar-integrated-national-search-and-rescue", "page_start": 26, "page_end": 26, "quote": "INSaR - 1 | KP, AJ&K and GB"}],
+      "status": "drafted"
+    },
+    {
+      "id": "i06",
+      "question": "How many global targets does the Sendai Framework set?",
+      "category": "identifier",
+      "expected_answer": "Seven global targets.",
+      "sources": [{"doc_id": "sendai-framework-drr-2015-2030", "page_start": 11, "page_end": 11, "quote": "seven global targets have been agreed"}],
+      "status": "drafted"
+    },
+
+    {
+      "id": "t01",
+      "question": "How much damage did the 2022 floods cause to agriculture?",
+      "category": "table",
+      "expected_answer": "PKR 800 billion (US$3,725 million); crop damage alone was over PKR 744,556 million.",
+      "sources": [{"doc_id": "pdna-2022-floods-main-report", "page_start": 87, "page_end": 87, "quote": "Damage to the Agriculture Sector: PKR 800 billion (US$3,725 million)"}],
+      "status": "drafted",
+      "notes": "The corpus states damages in PKR with US$ in brackets. Phase 0 found the headline US$14.9bn total is not extractable prose, so questions must use the corpus's own units."
+    },
+    {
+      "id": "t02",
+      "question": "What are the total recovery needs for Sindh after the 2022 floods?",
+      "category": "table",
+      "expected_answer": "PKR 493,634 million in total needs (reconstruction PKR 295,308 million plus repair PKR 198,326 million).",
+      "sources": [{"doc_id": "pdna-2022-floods-main-report", "page_start": 28, "page_end": 28, "quote": "| Sindh | 295,308 | 198,326 | 493,634 |"}],
+      "status": "drafted",
+      "notes": "Answer exists only inside a table - the case table extraction exists for."
+    },
+    {
+      "id": "t03",
+      "question": "What were the total housing damages in Balochistan in the 2022 floods?",
+      "category": "table",
+      "expected_answer": "192,605 housing units damaged in total (65,542 katcha completely damaged, 117,432 partially damaged, plus pucca damage).",
+      "sources": [{"doc_id": "pdna-2022-floods-main-report", "page_start": 24, "page_end": 24, "quote": "| Balochistan | 65,542 | 117,432 | 3,450 | 6,181 | 192,605 |"}],
+      "status": "drafted",
+      "notes": "VERIFY column meanings against the PDF before trusting the expected answer's wording."
+    },
+    {
+      "id": "t04",
+      "question": "How much damage did the water resources and irrigation sector suffer in 2022?",
+      "category": "table",
+      "expected_answer": "PKR 152.6 billion (US$710.6 million).",
+      "sources": [{"doc_id": "pdna-2022-floods-main-report", "page_start": 94, "page_end": 94, "quote": "total damages to the WRI sector by the 2022 floods are estimated at PKR 152.6 billion (US$710.6 million)"}],
+      "status": "drafted"
+    },
+    {
+      "id": "t05",
+      "question": "What were the damages to the disaster risk reduction sector itself in the 2022 floods?",
+      "category": "table",
+      "expected_answer": "PKR 1.02 billion (US$4.7 million).",
+      "sources": [{"doc_id": "pdna-2022-floods-main-report", "page_start": 158, "page_end": 158, "quote": "Total damages of PKR 1.02 billion (US$4.7 million) have been estimated for the DRR and Resilience sector"}],
+      "status": "drafted"
+    },
+
+    {
+      "id": "p01",
+      "question": "What are the steps for deploying a search and rescue team to a collapsed building?",
+      "category": "procedural",
+      "expected_answer": "A sequence covering activation and tasking, structural safety assessment, victim location and extrication, medical evacuation and logistics support, with NDMA coordinating employment across provinces.",
+      "sources": [
+        {"doc_id": "insar-integrated-national-search-and-rescue", "page_start": 34, "page_end": 34, "quote": "assess structural safety and provide technical support. (5) Logistics Support. For communication, transport and operational support."},
+        {"doc_id": "insar-integrated-national-search-and-rescue", "page_start": 25, "page_end": 25, "quote": "NDMA will coordinate employment, overseas and inter province, and capacity building of INSaR"}
+      ],
+      "status": "drafted",
+      "notes": "Tests whether a multi-step procedure survives chunking intact rather than returning half a sequence."
+    },
+    {
+      "id": "p02",
+      "question": "What must a district do to prepare its control room before the heatwave season?",
+      "category": "procedural",
+      "expected_answer": "Establish and maintain control rooms for information and coordination during the heatwave season, with staff trained in heat-related response and rehabilitation.",
+      "sources": [{"doc_id": "ndma-heatwave-advisory-april-2026", "page_start": 2, "page_end": 3, "quote": "establish and maintain Control Rooms for information and coordination during heatwave season"}],
+      "status": "drafted"
+    },
+    {
+      "id": "p03",
+      "question": "What preparations does NDMA require before the monsoon arrives?",
+      "category": "procedural",
+      "expected_answer": "Recoup and pre-position store reserves at safe locations, complete repair and maintenance of flood protection works before the onset of monsoon, update evacuation plans and safe routes, equip shelters and stockpile supplies.",
+      "sources": [
+        {"doc_id": "ndma-monsoon-contingency-plan-2026", "page_start": 30, "page_end": 30, "quote": "store reserves be recouped and pre-positioned at safe locations. Repair and maintenance of leftover flood protection works to be completed before onset of Monsoon."},
+        {"doc_id": "ndma-monsoon-contingency-plan-2026", "page_start": 32, "page_end": 32, "quote": "(8) Prepare and update evacuation plans and safe evacuation routes. (9) Designate/ equip shelters with essential supplies"}
+      ],
+      "status": "drafted"
+    },
+
+    {
+      "id": "m01",
+      "question": "How do Pakistan's DRR priorities line up with the global Sendai priorities?",
+      "category": "multi_hop",
+      "expected_answer": "Requires evidence from both the National DRR Strategy 2025-2030 and the Sendai Framework's four priorities for action.",
+      "sources": [
+        {"doc_id": "sendai-framework-drr-2015-2030", "page_start": 13, "page_end": 13, "quote": "four priority areas"},
+        {"doc_id": "ndrr-strategy-2025-2030", "page_start": 8, "page_end": 16, "quote": "Main Pillars of National DRR Strategy 2025 - 2030"}
+      ],
+      "status": "drafted",
+      "notes": "The DRR strategy's pillars appear in Figure 2, which is an image - verify whether the pillars exist as extractable text at all. If they do not, convert this item to unanswerable, which would itself be a valuable test."
+    },
+    {
+      "id": "m02",
+      "question": "Which climate hazards affect Pakistan's northern areas, and what damage did the 2022 floods cause there?",
+      "category": "multi_hop",
+      "expected_answer": "Northern hazards include GLOFs, avalanches and landslides, combined with the 2022 flood damage figures reported for those regions.",
+      "sources": [
+        {"doc_id": "nap-2023-national-adaptation-plan", "page_start": 8, "page_end": 8, "quote": "glacial lake outburst floods (GLOFs) from glacial melt"},
+        {"doc_id": "pdna-2022-floods-main-report", "page_start": 24, "page_end": 28, "quote": "provincial damage and needs tables"}
+      ],
+      "status": "drafted"
+    },
+
+    {
+      "id": "f01",
+      "question": "What about Sindh?",
+      "category": "follow_up",
+      "context": ["What were the total recovery needs after the 2022 floods?"],
+      "expected_answer": "Sindh's total needs: PKR 493,634 million.",
+      "sources": [{"doc_id": "pdna-2022-floods-main-report", "page_start": 28, "page_end": 28, "quote": "| Sindh | 295,308 | 198,326 | 493,634 |"}],
+      "status": "drafted",
+      "notes": "Four words in isolation. Without history-aware rewriting (feature 30) retrieval cannot succeed - this is the highest-value item in the set."
+    },
+    {
+      "id": "f02",
+      "question": "And which months does that cover?",
+      "category": "follow_up",
+      "context": ["What does NDMA's monsoon contingency plan prepare for?"],
+      "expected_answer": "July to September for the monsoon, with pre-monsoon from April to June.",
+      "sources": [{"doc_id": "ndma-contingency-plan-june2025", "page_start": 17, "page_end": 18, "quote": "Pre-Monsoon (April - June) and Monsoon (July - September) periods"}],
+      "status": "drafted"
+    },
+
+    {
+      "id": "u01",
+      "question": "What is NDMA's approved budget allocation for the 2027 financial year?",
+      "category": "unanswerable",
+      "answerable": false,
+      "status": "drafted",
+      "notes": "Absence confirmed: no chunk contains '2027 budget'. Plausible and in-domain, so the system must refuse rather than improvise from adjacent budget text."
+    },
+    {
+      "id": "u02",
+      "question": "Which temperature threshold triggers a district-level heatwave alert specifically for Gwadar?",
+      "category": "unanswerable",
+      "answerable": false,
+      "status": "drafted",
+      "notes": "Absence confirmed: no chunk pairs Gwadar with a heatwave threshold. The corpus does discuss heatwave thresholds generally, making this a genuine trap for a model that generalises."
+    },
+    {
+      "id": "u03",
+      "question": "What compensation of Rs per acre is paid to farmers whose crops were destroyed?",
+      "category": "unanswerable",
+      "answerable": false,
+      "status": "drafted",
+      "notes": "Absence confirmed: 'compensation of Rs' appears in no chunk, though crop damage valuations do - so the evidence set will look superficially relevant."
+    },
+    {
+      "id": "u04",
+      "question": "Does Pakistan operate an earthquake insurance scheme for homeowners?",
+      "category": "unanswerable",
+      "answerable": false,
+      "status": "drafted",
+      "notes": "Absence confirmed: 'earthquake insurance' appears in no chunk."
+    },
+
+    {
+      "id": "o01",
+      "question": "What is the capital of France?",
+      "category": "out_of_scope",
+      "answerable": false,
+      "status": "drafted",
+      "notes": "General knowledge the model certainly holds. Correct behaviour is a scope statement (feature 45), not an answer."
+    },
+    {
+      "id": "o02",
+      "question": "Write me a Python function that sorts a list of dictionaries by key.",
+      "category": "out_of_scope",
+      "answerable": false,
+      "status": "drafted",
+      "notes": "Capability request unrelated to the corpus; must be deflected rather than served."
+    }
+  ]
+}
