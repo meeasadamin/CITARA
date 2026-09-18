@@ -84,7 +84,8 @@ flowchart TD
 - [x] Grounded generation — cited answers, refusal before any model call, Gemini to Groq failover, degraded mode
 - [ ] Guardrails (prompt-injection defense, scope control)
 - [ ] Streamlit interface
-- [ ] Evaluation harness and ablation study (dense / sparse / hybrid / hybrid + rerank)
+- [x] Ablation study — five configurations from one command ([`eval/ABLATION.md`](eval/ABLATION.md))
+- [ ] Faithfulness and answer-relevance scoring, latency benchmarks
 - [ ] Public deployment
 
 ## Getting started
