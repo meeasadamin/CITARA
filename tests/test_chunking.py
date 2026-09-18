@@ -184,6 +184,18 @@ def test_overlap_disabled() -> None:
     assert _apply_overlap(pieces, overlap=0) == pieces
 
 
+def test_overlap_never_starts_mid_word() -> None:
+    """Regression: slicing by character count produced chunks opening with 'rrigation'.
+
+    Both the embedding and the cross-encoder read a passage's opening as evidence of what it
+    is about, so a fragment there is actively misleading.
+    """
+    pieces = ["Water flows through irrigation canals across the district.", "Next section here."]
+    overlapped = _apply_overlap(pieces, overlap=12)
+    tail = overlapped[1].split(" Next section")[0]
+    assert not tail or tail.split()[0] in pieces[0].split()
+
+
 def test_overlap_respects_the_size_ceiling() -> None:
     """Regression: overlap was added after the limit was enforced, pushing 25 chunks over."""
     pieces = ["a" * 90, "b" * 95]

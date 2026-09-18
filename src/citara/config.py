@@ -216,12 +216,15 @@ class RetrievalSettings(BaseModel):
     reranker_model: str = "BAAI/bge-reranker-base"
     reranker_batch_size: int = Field(default=16, gt=0)
     relevance_floor: float = Field(
-        default=0.10,
+        default=0.45,
         description=(
             "Reranker score below which evidence is discarded; if nothing clears it, the system "
-            "refuses (feature 29). PROVISIONAL - Phase 6 must calibrate this on the gold set. "
-            "A correctly-retrieved paraphrase measured 0.18, so a naive 0.5 cutoff would refuse "
-            "valid questions."
+            "refuses (feature 29). CALIBRATED on the gold set, not chosen by intuition: "
+            "answerable questions score a median 0.92 against 0.077 for unanswerable ones, and "
+            "0.45 admits none of the unanswerable questions. It refuses three answerable ones, "
+            "but retrieval had already missed the evidence for two of those, so refusing them "
+            "is correct; the genuine cost is one question. See scripts/calibrate_floor.py and "
+            "eval/runs/floor_calibration.json."
         ),
     )
     use_logit_scores: bool = Field(

@@ -113,9 +113,25 @@ def _apply_overlap(pieces: list[str], overlap: int, ceiling: int | None = None) 
     result = [pieces[0]]
     for previous, piece in pairwise(pieces):
         budget = overlap if ceiling is None else max(0, min(overlap, ceiling - len(piece) - 1))
-        tail = previous[-budget:].lstrip() if budget else ""
+        tail = _overlap_tail(previous, budget)
         result.append(f"{tail} {piece}" if tail else piece)
     return result
+
+
+def _overlap_tail(previous: str, budget: int) -> str:
+    """Take the last *budget* characters of *previous*, starting at a word boundary.
+
+    Slicing by character count alone cuts mid-word, so chunks began with fragments like
+    "rrigation canals". Both the embedding and the cross-encoder read a passage's opening as
+    evidence of what it is about, so a fragment there is actively misleading.
+    """
+    if budget <= 0:
+        return ""
+    cut = max(0, len(previous) - budget)
+    if cut > 0 and not previous[cut - 1].isspace():
+        next_space = previous.find(" ", cut)
+        cut = next_space + 1 if next_space != -1 else len(previous)
+    return previous[cut:].strip()
 
 
 def is_low_information(text: str) -> bool:
