@@ -202,7 +202,7 @@
       "expected_answer": "Northern hazards include GLOFs, avalanches and landslides, combined with the 2022 flood damage figures reported for those regions.",
       "sources": [
         {"doc_id": "nap-2023-national-adaptation-plan", "page_start": 8, "page_end": 8, "quote": "glacial lake outburst floods (GLOFs) from glacial melt"},
-        {"doc_id": "pdna-2022-floods-main-report", "page_start": 24, "page_end": 28, "quote": "provincial damage and needs tables"}
+        {"doc_id": "pdna-2022-floods-main-report", "page_start": 24, "page_end": 24, "quote": "| KP | 10,929 | 17,779 | 22,120 | 41,104 | 91,932 |"}
       ],
       "status": "drafted"
     },
