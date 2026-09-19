@@ -2,11 +2,13 @@
 
 Two different problems that look alike.
 
-**The daily budget** protects a shared free tier. It is tracked against the day rather than
-the process, because Streamlit restarts an app whenever it wakes and a counter that resets on
-restart protects nothing. Crossing it does not raise: the system falls back to serving cited
-evidence without generation, which is the same degraded path used when providers fail. An
-officer who still gets the right source pages has lost the summary, not the answer.
+**The daily budget** protects a shared free tier. It counts provider *requests* - every attempt,
+retries and query rewrites included - not answers, because a quota is spent by calls and one
+answer can take several. It is tracked against the day rather than the process, because
+Streamlit restarts an app whenever it wakes and a counter that resets on restart protects
+nothing. Crossing it does not raise: the system falls back to serving cited evidence without
+generation, which is the same degraded path used when providers fail. An officer who still gets
+the right source pages has lost the summary, not the answer.
 
 **The session cap** is abuse protection on a public URL, stopping one visitor from consuming
 the quota everyone shares. It lives in memory, because a session is a browser tab and does
@@ -19,13 +21,20 @@ than simply stop working.
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from citara.config import Settings
 from citara.log import get_logger
+from citara.resilience.files import write_atomic
 
 log = get_logger("resilience.budget")
+
+# Every counter in the process shares one file, so they share one lock: a read-modify-write
+# that interleaves with another loses a request from the count.
+_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -57,6 +66,12 @@ class RequestBudget:
         self.path = path
         self.daily_limit = daily_limit
 
+    @classmethod
+    def from_settings(cls, settings: Settings) -> RequestBudget:
+        """The shared counter, for any component that sends requests."""
+        paths = settings.paths
+        return cls(paths.resolved(paths.usage_path), settings.resilience.daily_request_budget)
+
     @staticmethod
     def _today() -> str:
         return datetime.now(UTC).strftime("%Y-%m-%d")
@@ -74,26 +89,28 @@ class RequestBudget:
     def state(self) -> BudgetState:
         """Today's usage without changing it."""
         day = self._today()
-        return BudgetState(day=day, used=self._read().get(day, 0), limit=self.daily_limit)
+        with _LOCK:
+            used = self._read().get(day, 0)
+        return BudgetState(day=day, used=used, limit=self.daily_limit)
 
     def record(self, requests: int = 1) -> BudgetState:
         """Count requests against today, keeping only recent days on disk."""
         day = self._today()
-        counts = self._read()
-        counts[day] = counts.get(day, 0) + requests
-        # Keep a fortnight: enough to see a pattern, small enough to stay trivial.
-        recent = dict(sorted(counts.items())[-14:])
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(recent), encoding="utf-8")
-        except OSError:
-            log.warning("could not persist request usage", exc_info=True)
+        with _LOCK:
+            counts = self._read()
+            counts[day] = counts.get(day, 0) + requests
+            # Keep a fortnight: enough to see a pattern, small enough to stay trivial.
+            recent = dict(sorted(counts.items())[-14:])
+            try:
+                write_atomic(self.path, json.dumps(recent))
+            except OSError:
+                log.warning("could not persist request usage", exc_info=True)
 
         state = BudgetState(day=day, used=recent[day], limit=self.daily_limit)
         if state.exhausted:
             log.warning("daily request budget exhausted", extra={"used": state.used})
         elif state.low:
-            log.info("daily request budget running low", extra={"remaining": state.remaining})
+            log.warning("daily request budget running low", extra={"remaining": state.remaining})
         return state
 
 

@@ -31,8 +31,9 @@ _MAX_LENGTH = 512
 def load_reranker(model_name: str) -> CrossEncoder:
     """Load and cache the cross-encoder.
 
-    Roughly a gigabyte of resident memory, so it is loaded once per process and never
-    eagerly: a degraded run with no reranker must still be able to serve cited sources.
+    Roughly a gigabyte of resident memory, so it is loaded once per process, and only on first
+    use or an explicit ``warm_up()`` - never at import or construction, which would make every
+    script and test that touches retrieval pay for a model it may not run.
     """
     log.info("loading reranker", extra={"model": model_name})
     model: CrossEncoder = CrossEncoder(model_name, max_length=_MAX_LENGTH)
@@ -44,6 +45,11 @@ class CrossEncoderReranker:
 
     def __init__(self, settings: RetrievalSettings) -> None:
         self.settings = settings
+
+    def warm_up(self) -> None:
+        """Load the model and run one pass, so the first real question pays for neither."""
+        model = load_reranker(self.settings.reranker_model)
+        model.predict([("warm up", "warm up")], show_progress_bar=False)
 
     def rerank(self, query: str, candidates: list[RetrievedChunk]) -> list[RetrievedChunk]:
         """Attach ``rerank_score`` to each candidate and return them best first."""

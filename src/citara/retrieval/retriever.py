@@ -188,5 +188,17 @@ class HybridRetriever:
 
         return outcome
 
+    def warm_up(self) -> None:
+        """Load both models and touch the index before the first question (feature 64).
+
+        Profiled cold, the first answer spent almost all of its time importing and loading the
+        embedder and the cross-encoder rather than retrieving. Paying that at startup, behind
+        an honest loading state, moves the wait to where it can be explained.
+        """
+        with stage(log, "warm_up", mode=self.settings.retrieval.mode):
+            self.store.search(self.embedder.embed_query("warm up"), k=1)
+            if self.settings.retrieval.mode == "hybrid_rerank":
+                self.reranker.warm_up()
+
     def close(self) -> None:
         self.store.close()

@@ -52,8 +52,12 @@ class FakeProvider:
         self.text = text
         self.fail = fail
         self.calls = 0
+        self.warmed = False
         self.last_system = ""
         self.last_user = ""
+
+    def warm_up(self) -> None:
+        self.warmed = True
 
     def generate(self, system: str, user: str) -> str:
         self.calls += 1
@@ -76,8 +80,17 @@ def build_answerer(
     tmp_path: Path | None = None,
 ) -> Answerer:
     class FakeRetriever:
+        def __init__(self) -> None:
+            self.chunks_by_id = {r.chunk_id: r.chunk for r in results or []}
+            self.calls: list[dict[str, object]] = []
+            self.warmed = False
+
         def retrieve(self, question, history=None, doc_ids=None, year=None):  # type: ignore[no-untyped-def]
+            self.calls.append({"question": question, "doc_ids": doc_ids, "year": year})
             return outcome_with(results or [], refused=not results)
+
+        def warm_up(self) -> None:
+            self.warmed = True
 
         def close(self) -> None: ...
 
@@ -448,3 +461,178 @@ def test_repeat_questions_are_served_from_cache(tmp_path: Path) -> None:
     assert provider.calls == 1
     assert second.text == first.text
     assert [c.citation for c in second.cited] == [c.citation for c in first.cited]
+
+
+# --- resilience on both entry points --------------------------------------------------
+
+
+def run_stream(answerer: Answerer, question: str, **kwargs: object) -> GeneratedAnswer:
+    """Consume a stream and return the finished answer."""
+    final = [answer for _, answer in answerer.stream(question, **kwargs) if answer is not None]  # type: ignore[arg-type]
+    assert len(final) == 1
+    return final[0]
+
+
+def test_streaming_respects_the_session_cap(tmp_path: Path) -> None:
+    """Regression: the cap lived in answer() alone, and the interface calls stream()."""
+    provider = FakeProvider("gemini", "Answer [1].")
+    answerer = build_answerer([provider], results=[make_result("a", "text")], tmp_path=tmp_path)
+    answerer.sessions.cap = 2
+
+    for n in range(2):
+        assert run_stream(answerer, f"flood question {n}", session_id="s1").mode == "generated"
+    capped = run_stream(answerer, "flood question 3", session_id="s1")
+
+    assert capped.mode == "refused"
+    assert "question limit" in capped.text
+    assert provider.calls == 2
+
+
+def test_streaming_serves_repeats_from_cache_without_retrieving(tmp_path: Path) -> None:
+    provider = FakeProvider("gemini", "Evacuate low-lying areas [1].")
+    answerer = build_answerer([provider], results=[make_result("a", "text")], tmp_path=tmp_path)
+
+    first = run_stream(answerer, "What should people do?")
+    retrievals = len(answerer.retriever.calls)  # type: ignore[attr-defined]
+    items = list(answerer.stream("what should people do"))
+
+    assert len(items) == 1  # delivered whole: nothing is being generated
+    repeat = items[0][1]
+    assert repeat is not None and repeat.cached is True
+    assert repeat.text == first.text
+    assert provider.calls == 1
+    assert len(answerer.retriever.calls) == retrievals  # type: ignore[attr-defined]
+
+
+def test_both_entry_points_share_one_cache(tmp_path: Path) -> None:
+    provider = FakeProvider("gemini", "Evacuate low-lying areas [1].")
+    answerer = build_answerer([provider], results=[make_result("a", "text")], tmp_path=tmp_path)
+
+    run_stream(answerer, "What should people do?")
+    assert answerer.answer("what should people do").cached is True
+    assert provider.calls == 1
+
+
+def test_streaming_degrades_when_the_budget_is_spent(tmp_path: Path) -> None:
+    """Regression: stream() never checked the budget, so it kept calling providers."""
+    provider = FakeProvider("gemini", "should never run")
+    answerer = build_answerer(
+        [provider], results=[make_result("a", "Evacuation protocol.")], tmp_path=tmp_path
+    )
+    answerer.budget.daily_limit = 1
+    answerer.budget.record(1)
+
+    items = list(answerer.stream("what should people do when water rises"))
+
+    assert len(items) == 1
+    answer = items[0][1]
+    assert answer is not None and answer.mode == "degraded"
+    assert "budget" in answer.error
+    assert "NDRP 2019, p. 47" in answer.text
+    assert provider.calls == 0
+
+
+def test_streaming_passes_document_filters_to_retrieval(tmp_path: Path) -> None:
+    answerer = build_answerer(
+        [FakeProvider("gemini", "x [1].")], results=[make_result("a", "t")], tmp_path=tmp_path
+    )
+    run_stream(answerer, "what should people do", doc_ids=["ndrp"], year=2019)
+    assert answerer.retriever.calls[-1] == {  # type: ignore[attr-defined]
+        "question": "what should people do",
+        "doc_ids": ["ndrp"],
+        "year": 2019,
+    }
+
+
+def test_an_abandoned_stream_still_counts_against_the_session(tmp_path: Path) -> None:
+    """Streamlit reruns the script on any click, so a stream can stop mid-answer.
+
+    The provider was already called by then; a cap counted only on completion could be
+    sidestepped by never letting an answer finish.
+    """
+    answerer = build_answerer(
+        [FakeProvider("gemini", "one two three four [1].")],
+        results=[make_result("a", "t")],
+        tmp_path=tmp_path,
+    )
+    stream = answerer.stream("what should people do", session_id="s1")
+    next(stream)
+    stream.close()
+
+    assert answerer.sessions.used("s1") == 1
+
+
+def test_cached_answers_keep_their_evidence(tmp_path: Path) -> None:
+    """A cached answer must show the same sources and evidence strength as a fresh one."""
+    provider = FakeProvider("gemini", "Evacuate low-lying areas [1].")
+    answerer = build_answerer(
+        [provider], results=[make_result("a", "Evacuation protocol.")], tmp_path=tmp_path
+    )
+
+    fresh = answerer.answer("what should people do")
+    cached = answerer.answer("what should people do")
+
+    assert cached.cached is True
+    assert [r.chunk_id for r in cached.evidence] == [r.chunk_id for r in fresh.evidence]
+    assert [r.rerank_score for r in cached.evidence] == [r.rerank_score for r in fresh.evidence]
+    assert cached.evidence[0].chunk.content == "Evacuation protocol."
+
+
+def test_cached_answer_is_dropped_when_its_evidence_leaves_the_index(tmp_path: Path) -> None:
+    """After a rebuild, an answer whose sources cannot be shown is not one to serve."""
+    provider = FakeProvider("gemini", "Evacuate low-lying areas [1].")
+    answerer = build_answerer([provider], results=[make_result("a", "text")], tmp_path=tmp_path)
+    answerer.answer("what should people do")
+
+    answerer.retriever.chunks_by_id.clear()  # type: ignore[attr-defined]
+    again = answerer.answer("what should people do")
+
+    assert again.cached is False
+    assert provider.calls == 2
+
+
+def test_answers_citing_missing_evidence_are_not_cached(tmp_path: Path) -> None:
+    provider = FakeProvider("gemini", "Evacuate low-lying areas [7].")
+    answerer = build_answerer([provider], results=[make_result("a", "text")], tmp_path=tmp_path)
+
+    assert answerer.answer("what should people do").invalid_markers == [7]
+    assert answerer.answer("what should people do").cached is False
+    assert provider.calls == 2
+
+
+def test_a_standalone_question_hits_the_cache_mid_conversation(tmp_path: Path) -> None:
+    """History only matters for follow-ups; a showcase question should hit either way."""
+    provider = FakeProvider("gemini", "Answer [1].")
+    answerer = build_answerer([provider], results=[make_result("a", "t")], tmp_path=tmp_path)
+
+    answerer.answer("Which months does NDMA treat as the monsoon period?")
+    later = answerer.answer(
+        "Which months does NDMA treat as the monsoon period?",
+        history=["What were the total damages of the 2022 floods?"],
+    )
+    assert later.cached is True
+
+
+def test_a_follow_up_is_keyed_on_its_conversation(tmp_path: Path) -> None:
+    """'What about Sindh?' means different things after different questions."""
+    provider = FakeProvider("gemini", "Answer [1].")
+    answerer = build_answerer([provider], results=[make_result("a", "t")], tmp_path=tmp_path)
+
+    answerer.answer("What about Sindh?", history=["What were the flood damages?"])
+    other = answerer.answer("What about Sindh?", history=["What were the heatwave deaths?"])
+    same = answerer.answer("What about Sindh?", history=["What were the flood damages?"])
+
+    assert other.cached is False
+    assert same.cached is True
+
+
+def test_warm_up_loads_models_and_spends_no_quota(tmp_path: Path) -> None:
+    provider = FakeProvider("gemini", "unused")
+    answerer = build_answerer([provider], results=[make_result("a", "t")], tmp_path=tmp_path)
+
+    answerer.warm_up()
+
+    assert answerer.retriever.warmed is True  # type: ignore[attr-defined]
+    assert provider.warmed is True
+    assert provider.calls == 0
+    assert answerer.budget.state().used == 0

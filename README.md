@@ -36,7 +36,7 @@ CITARA turns a static PDF archive into a queryable decision-support layer, cutti
 | Tables | PDF tables extracted and serialised to Markdown (critical for PDNA damage figures) |
 | Chunking | Semantic breakpoint chunking with deterministic recursive fallback and near-duplicate removal |
 | Security | Prompt-injection screening on user input **and** on retrieved document text |
-| Resilience | Retry with backoff, LLM provider failover, response caching, degraded mode returning cited sources |
+| Resilience | Retry with backoff, LLM provider failover, response caching, degraded mode returning cited sources, a daily budget counted per request |
 | Data sovereignty | Embeddings and reranking run locally on CPU — document content never leaves the host for indexing |
 | Evaluation | 30-question gold set, Hit Rate@k, MRR, p50/p95 latency, and a five-configuration ablation that changed the defaults |
 
@@ -83,7 +83,7 @@ flowchart TD
 - [x] Retrieval — dense + BM25, RRF fusion, cross-encoder gate, floor calibrated on the gold set ([`eval/RESULTS.md`](eval/RESULTS.md))
 - [x] Grounded generation — cited answers, refusal before any model call, Gemini to Groq failover, degraded mode
 - [x] Guardrails — injection defense on input and on retrieved text, scope control, non-identifying query log
-- [x] Resilience — retry with backoff, disk cache, daily budget, session cap, degraded mode
+- [x] Resilience — retry with backoff, disk cache, per-request daily budget, session cap, degraded mode, startup warm-up
 - [ ] Streamlit interface
 - [x] Ablation study — five configurations from one command ([`eval/ABLATION.md`](eval/ABLATION.md))
 - [ ] Faithfulness and answer-relevance scoring, latency benchmarks

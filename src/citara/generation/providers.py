@@ -17,6 +17,7 @@ from typing import Protocol
 
 from citara.config import Settings
 from citara.log import get_logger
+from citara.resilience.budget import RequestBudget
 from citara.resilience.retry import with_retry
 
 log = get_logger("generation.provider")
@@ -48,6 +49,7 @@ class Provider(Protocol):
 
     def generate(self, system: str, user: str) -> str: ...
     def stream(self, system: str, user: str) -> Iterator[str]: ...
+    def warm_up(self) -> None: ...
 
 
 class _LangChainProvider:
@@ -59,6 +61,7 @@ class _LangChainProvider:
         self.settings = settings
         self.model = ""
         self._client: object | None = None
+        self.budget = RequestBudget.from_settings(settings)
 
     def _build(self) -> object:
         raise NotImplementedError
@@ -71,17 +74,30 @@ class _LangChainProvider:
     def _messages(self, system: str, user: str) -> list[tuple[str, str]]:
         return [("system", system), ("human", user)]
 
+    def warm_up(self) -> None:
+        """Build the client ahead of the first question. Sends nothing, so spends no quota."""
+        try:
+            self._chat()
+        except Exception:
+            log.warning("could not prepare provider", extra={"provider": self.name}, exc_info=True)
+
     def generate(self, system: str, user: str) -> str:
         """Ask the model, waiting out transient failures before giving up (feature 50)."""
 
         def call() -> str:
-            response = self._chat().invoke(self._messages(system, user))  # type: ignore[attr-defined]
+            chat = self._chat()
+            # Counted per attempt, before sending: a retry is another request against the
+            # quota, and so is one that fails once it has left the process (feature 48).
+            self.budget.record()
+            response = chat.invoke(self._messages(system, user))  # type: ignore[attr-defined]
             return extract_text(getattr(response, "content", "")).strip()
 
         return with_retry(call, self.settings.resilience, label=f"{self.name}.generate")
 
     def stream(self, system: str, user: str) -> Iterator[str]:
-        for piece in self._chat().stream(self._messages(system, user)):  # type: ignore[attr-defined]
+        chat = self._chat()
+        self.budget.record()
+        for piece in chat.stream(self._messages(system, user)):  # type: ignore[attr-defined]
             text = extract_text(getattr(piece, "content", ""))
             if text:
                 yield text

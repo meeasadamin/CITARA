@@ -1,0 +1,69 @@
+{
+  "config_fingerprint": "c8458844ad7a",
+  "reranker": "BAAI/bge-reranker-base",
+  "relevance_floor": 0.3386,
+  "questions": 30,
+  "repeats": 2,
+  "cpu_count": 8,
+  "torch_default_threads": 4,
+  "variants": {
+    "torch": {
+      "median_ms": 3086,
+      "p95_ms": 4517,
+      "max_abs_score_diff": 0.0,
+      "gate_decisions_same": 30,
+      "chunk_admissions_same": 30,
+      "rankings_same": 30,
+      "flipped": []
+    },
+    "torch_8_threads": {
+      "median_ms": 2175,
+      "p95_ms": 3592,
+      "max_abs_score_diff": 0.0,
+      "gate_decisions_same": 30,
+      "chunk_admissions_same": 30,
+      "rankings_same": 30,
+      "flipped": []
+    },
+    "onnx_fp32": {
+      "median_ms": 2863,
+      "p95_ms": 4263,
+      "max_abs_score_diff": 0.0,
+      "gate_decisions_same": 30,
+      "chunk_admissions_same": 30,
+      "rankings_same": 30,
+      "flipped": []
+    },
+    "onnx_int8": {
+      "median_ms": 1301,
+      "p95_ms": 2123,
+      "max_abs_score_diff": 0.59404,
+      "gate_decisions_same": 27,
+      "chunk_admissions_same": 21,
+      "rankings_same": 11,
+      "flipped": [
+        {
+          "id": "c01",
+          "answerable": true,
+          "reference_best": 0.4218,
+          "variant_best": 0.246,
+          "now": "refused"
+        },
+        {
+          "id": "c05",
+          "answerable": true,
+          "reference_best": 0.0818,
+          "variant_best": 0.6157,
+          "now": "admitted"
+        },
+        {
+          "id": "u04",
+          "answerable": false,
+          "reference_best": 0.2912,
+          "variant_best": 0.531,
+          "now": "admitted"
+        }
+      ]
+    }
+  }
+}

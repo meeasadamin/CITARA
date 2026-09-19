@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+import threading
+from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from citara.config import ResilienceSettings
+from citara.config import ResilienceSettings, Settings
+from citara.generation.providers import _LangChainProvider
 from citara.resilience.budget import RequestBudget, SessionLimiter
 from citara.resilience.cache import AnswerCache, cache_key, normalise_question
+from citara.resilience.files import write_atomic
 from citara.resilience.retry import is_transient, with_retry
+from citara.retrieval.llm_rewriter import LLMRewriter
 
 
 def settings(**overrides: object) -> ResilienceSettings:
@@ -226,3 +232,146 @@ def test_session_can_be_reset() -> None:
     limiter.record("a")
     limiter.reset("a")
     assert limiter.allows("a") is True
+
+
+def test_concurrent_requests_are_all_counted(tmp_path: Path) -> None:
+    """Streamlit serves each visitor on a thread; an interleaved read-modify-write drops counts."""
+    path = tmp_path / "usage.json"
+
+    def burst() -> None:
+        budget = RequestBudget(path, daily_limit=10_000)
+        for _ in range(25):
+            budget.record()
+
+    threads = [threading.Thread(target=burst) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert RequestBudget(path, daily_limit=10_000).state().used == 200
+
+
+# --- atomic writes -------------------------------------------------------------------
+
+
+def test_atomic_write_replaces_and_leaves_nothing_behind(tmp_path: Path) -> None:
+    target = tmp_path / "usage.json"
+    write_atomic(target, '{"a": 1}')
+    write_atomic(target, '{"a": 2}')
+    assert json.loads(target.read_text(encoding="utf-8")) == {"a": 2}
+    assert [p.name for p in tmp_path.iterdir()] == ["usage.json"]
+
+
+def test_a_failed_write_keeps_the_previous_file(tmp_path: Path) -> None:
+    """A write that dies part-way must not leave a torn file that reads as a zero count."""
+    target = tmp_path / "usage.json"
+    write_atomic(target, '{"2026-01-01": 7}')
+
+    class Unserialisable:
+        def __str__(self) -> str:
+            raise RuntimeError("disk full")
+
+    with pytest.raises(TypeError):
+        write_atomic(target, Unserialisable())  # type: ignore[arg-type]
+    assert json.loads(target.read_text(encoding="utf-8")) == {"2026-01-01": 7}
+    assert [p.name for p in tmp_path.iterdir()] == ["usage.json"]
+
+
+# --- counting where requests leave the process (feature 48) --------------------------
+
+
+class FakeChat:
+    """Stands in for a LangChain chat model; fails transiently a set number of times."""
+
+    def __init__(self, failures: int = 0, text: str = "answer") -> None:
+        self.failures = failures
+        self.text = text
+        self.invocations = 0
+
+    def invoke(self, messages: object) -> SimpleNamespace:
+        self.invocations += 1
+        if self.invocations <= self.failures:
+            raise RuntimeError("429 rate limit")
+        return SimpleNamespace(content=self.text)
+
+    def stream(self, messages: object) -> Iterator[SimpleNamespace]:
+        self.invocations += 1
+        yield SimpleNamespace(content=self.text)
+
+
+def fast_settings() -> Settings:
+    return Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        resilience=ResilienceSettings(max_retries=3, backoff_base_s=0.001, backoff_max_s=0.001),
+    )
+
+
+def provider_with(chat: FakeChat | None, settings: Settings) -> _LangChainProvider:
+    class Provider(_LangChainProvider):
+        name = "fake"
+
+        def _build(self) -> object:
+            if chat is None:
+                raise RuntimeError("GOOGLE_API_KEY is not configured")
+            return chat
+
+    return Provider(settings)
+
+
+def test_every_attempt_is_counted_including_retries() -> None:
+    """Two rate-limited attempts and a success are three requests, not one answer."""
+    settings = fast_settings()
+    chat = FakeChat(failures=2)
+    assert provider_with(chat, settings).generate("system", "user") == "answer"
+    assert chat.invocations == 3
+    assert RequestBudget.from_settings(settings).state().used == 3
+
+
+def test_a_request_that_never_left_is_not_counted() -> None:
+    settings = fast_settings()
+    with pytest.raises(RuntimeError, match="not configured"):
+        provider_with(None, settings).generate("system", "user")
+    assert RequestBudget.from_settings(settings).state().used == 0
+
+
+def test_a_stream_counts_as_one_request() -> None:
+    settings = fast_settings()
+    assert "".join(provider_with(FakeChat(), settings).stream("system", "user")) == "answer"
+    assert RequestBudget.from_settings(settings).state().used == 1
+
+
+def test_provider_warm_up_spends_nothing() -> None:
+    settings = fast_settings()
+    chat = FakeChat()
+    provider = provider_with(chat, settings)
+    provider.warm_up()
+    assert chat.invocations == 0
+    assert RequestBudget.from_settings(settings).state().used == 0
+
+
+def test_query_rewriting_counts_against_the_budget() -> None:
+    settings = fast_settings()
+    rewriter = LLMRewriter(settings)
+    rewriter._client = FakeChat(text="What were the total flood damages in Sindh?")
+
+    rewritten = rewriter.rewrite("What about Sindh?", ["What were the total flood damages?"])
+
+    assert rewritten == "What were the total flood damages in Sindh?"
+    assert RequestBudget.from_settings(settings).state().used == 1
+
+
+def test_query_rewriting_stops_spending_once_the_budget_is_gone() -> None:
+    """The free heuristic is the better use of nothing."""
+    settings = fast_settings()
+    budget = RequestBudget.from_settings(settings)
+    budget.record(settings.resilience.daily_request_budget)
+    chat = FakeChat(text="should not be asked")
+    rewriter = LLMRewriter(settings)
+    rewriter._client = chat
+
+    rewritten = rewriter.rewrite("What about Sindh?", ["What were the total flood damages?"])
+
+    assert chat.invocations == 0
+    assert rewritten != "should not be asked"
+    assert "Sindh" in rewritten

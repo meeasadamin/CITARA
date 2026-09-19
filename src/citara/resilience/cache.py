@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from citara.log import get_logger
+from citara.resilience.files import write_atomic
 
 log = get_logger("resilience.cache")
 
@@ -59,6 +60,14 @@ class AnswerCache:
     def _path(self, key: str) -> Path:
         return self.directory / f"{key}.json"
 
+    @staticmethod
+    def _discard(path: Path) -> None:
+        """Remove an entry, tolerating a file another thread still holds open on Windows."""
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            log.debug("could not remove cache entry", extra={"path": path.name})
+
     def get(self, key: str) -> dict[str, Any] | None:
         """Return a stored payload, or None when absent, expired or unreadable."""
         path = self._path(key)
@@ -68,12 +77,12 @@ class AnswerCache:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             log.warning("discarding unreadable cache entry", extra={"key": key})
-            path.unlink(missing_ok=True)
+            self._discard(path)
             return None
 
         age = time.time() - float(payload.get("stored_at", 0))
         if age > self.ttl_s:
-            path.unlink(missing_ok=True)
+            self._discard(path)
             return None
 
         log.info("cache hit", extra={"key": key, "age_s": round(age)})
@@ -85,10 +94,9 @@ class AnswerCache:
         A cache problem must never break an answer the user already has.
         """
         try:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            self._path(key).write_text(
+            write_atomic(
+                self._path(key),
                 json.dumps({"stored_at": time.time(), "value": value}, ensure_ascii=False),
-                encoding="utf-8",
             )
             self._evict()
         except OSError:
@@ -98,12 +106,12 @@ class AnswerCache:
         """Keep the cache bounded, discarding the least recently written entries first."""
         entries = sorted(self.directory.glob("*.json"), key=lambda p: p.stat().st_mtime)
         for path in entries[: max(0, len(entries) - self.max_entries)]:
-            path.unlink(missing_ok=True)
+            self._discard(path)
 
     def clear(self) -> int:
         """Remove every entry, returning how many were removed."""
         removed = 0
         for path in self.directory.glob("*.json"):
-            path.unlink(missing_ok=True)
+            self._discard(path)
             removed += 1
         return removed

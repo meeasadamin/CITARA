@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from citara.config import GenerationSettings, Settings, get_settings
 from citara.log import get_logger
+from citara.resilience.budget import RequestBudget
 from citara.retrieval.query import HeuristicRewriter, looks_like_follow_up
 
 log = get_logger("retrieval.rewriter")
@@ -65,6 +66,7 @@ class LLMRewriter:
         self._fallback = HeuristicRewriter()
         self._client: object | None = None
         self._unavailable = False
+        self.budget = RequestBudget.from_settings(self.settings)
 
     def _model(self) -> object | None:
         """Lazily build the chat client; None when no key is configured."""
@@ -97,6 +99,11 @@ class LLMRewriter:
         if not history or not looks_like_follow_up(question):
             return question
 
+        # A rewrite is a request against the same quota as an answer. Once the day's budget
+        # is gone, the free heuristic is the better use of nothing.
+        if self.budget.state().exhausted:
+            return self._fallback.rewrite(question, history)
+
         model = self._model()
         if model is None:
             return self._fallback.rewrite(question, history)
@@ -105,6 +112,7 @@ class LLMRewriter:
             history="\n".join(f"- {turn}" for turn in history), question=question
         )
         try:
+            self.budget.record()
             response = model.invoke(prompt)  # type: ignore[attr-defined]
             text = _extract_text(getattr(response, "content", "")).strip().strip('"')
         except Exception:

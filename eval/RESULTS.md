@@ -7,7 +7,8 @@ Two artifacts, with one source of truth each.
   [`runs/ablation.json`](runs/ablation.json), so the numbers cannot drift from the
   measurements. Do not hand-edit it.
 - **This file** covers what the generated table does not: how the relevance floor was
-  calibrated, and what the diagnosis found underneath the numbers.
+  calibrated, what the diagnosis found underneath the numbers, and why the reranker was not
+  made faster.
 
 Reproduce everything:
 
@@ -15,6 +16,7 @@ Reproduce everything:
 uv run python -m citara.evaluation        # the ablation table
 uv run python scripts/calibrate_floor.py  # the relevance floor
 uv run python scripts/evaluate_retrieval.py --mode dense   # one configuration in detail
+uv run --with onnx python scripts/benchmark_reranker.py    # reranker speed against the gate
 ```
 
 ## Relevance floor
@@ -62,6 +64,45 @@ thresholds. The ablation's refusal column shows what that is worth.
 Sindh?" into "What were the total recovery needs in Sindh after the 2022 floods?", which is
 the query the retriever needed, and the gold page still does not surface. The failure is in
 retrieval, not in rewriting, and that is where the next round of work belongs.
+
+## Why the reranker was not made faster
+
+Cross-encoder inference is nearly all of a warm query's latency, so it was the obvious target.
+But its score is what the calibrated floor thresholds, which makes it the admissibility gate.
+A faster gate that admits a different set of questions is not an optimisation. It is a
+different safety system that nobody calibrated.
+
+So each candidate was judged on latency *and* on whether it reaches the same admit/refuse
+decision as the current model, on the exact passages the live gate scores for all 30 gold
+questions, timed interleaved so machine noise lands on every variant alike
+([`runs/reranker_backends.json`](runs/reranker_backends.json)):
+
+| Variant | Median | p95 | Same gate decision | Same per-chunk admission |
+|---|---|---|---|---|
+| PyTorch, 4 threads (current) | 3,086 ms | 4,517 ms | 30/30 | 30/30 |
+| PyTorch, 8 threads | 2,175 ms | 3,592 ms | 30/30 | 30/30 |
+| ONNX Runtime, fp32 | 2,863 ms | 4,263 ms | 30/30 | 30/30 |
+| ONNX Runtime, int8 | 1,301 ms | 2,123 ms | **27/30** | **21/30** |
+
+- **int8 is 2.4 times faster and changes three decisions.** Unanswerable question u04 rises
+  from 0.291 to 0.531 and would be answered. Answerable c01 falls below the floor and would be
+  refused, and c05 is admitted on a score that moved from 0.082 to 0.616. Scores shift by up to
+  0.59, so the calibrated floor no longer means anything for this model. Rejected.
+- **ONNX fp32 matches exactly and gains about 7%.** That is not worth running a second
+  inference runtime for.
+- **Eight threads is 30% faster with identical scores**, but on this laptop that gain comes
+  from hyper-threading, and a hosted container can report more CPUs than it is allowed to use.
+  It is a setting to measure on the deployment host, not a default to assume.
+
+The recipe tested was standard dynamic int8 quantisation: per-tensor weights, without
+onnxruntime's pre-processing pass. Per-channel or pre-processed quantisation might drift less.
+Any such variant would still need the floor re-calibrated and the ablation re-run before it
+could replace the current gate, so the 3 s stays. The ablation's refusal column shows what it
+buys.
+
+The cold start was a separate problem, and it was fixed. Before the models were loaded at
+startup, the first question took 48.9 s, nearly all of it loading the embedder and
+cross-encoder. After an explicit warm-up it took 3.9 s.
 
 ## Honest limits
 
