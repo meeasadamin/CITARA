@@ -82,6 +82,7 @@ def build_answerer(
     class FakeRetriever:
         def __init__(self) -> None:
             self.chunks_by_id = {r.chunk_id: r.chunk for r in results or []}
+            self.index_version = "test-index"
             self.calls: list[dict[str, object]] = []
             self.warmed = False
 
@@ -636,3 +637,59 @@ def test_warm_up_loads_models_and_spends_no_quota(tmp_path: Path) -> None:
     assert provider.warmed is True
     assert provider.calls == 0
     assert answerer.budget.state().used == 0
+
+
+def test_a_rebuilt_index_does_not_serve_answers_from_the_old_one(tmp_path: Path) -> None:
+    """A revised plan must not be answered from the version it replaced for the next day."""
+    provider = FakeProvider("gemini", "Evacuate low-lying areas [1].")
+    answerer = build_answerer([provider], results=[make_result("a", "text")], tmp_path=tmp_path)
+    answerer.answer("what should people do")
+
+    answerer.retriever.index_version = "rebuilt-index"  # type: ignore[attr-defined]
+    again = answerer.answer("what should people do")
+
+    assert again.cached is False
+    assert provider.calls == 2
+
+
+def test_index_version_tracks_content_not_order() -> None:
+    from citara.retrieval.retriever import index_version
+
+    a, b = make_result("a", "First passage.").chunk, make_result("b", "Second.").chunk
+    assert index_version([a, b]) == index_version([b, a])  # a no-op rebuild keeps the cache
+
+    revised = a.model_copy(update={"content": "First passage, revised."})
+    assert index_version([revised, b]) != index_version([a, b])
+
+    moved = a.model_copy(update={"page_start": 48, "page_end": 48})
+    assert index_version([moved, b]) != index_version([a, b])  # the citation changed
+
+
+def test_a_provider_failing_mid_stream_leaves_nothing_in_the_final_answer(tmp_path: Path) -> None:
+    """The caller replaces streamed text with the final answer; that text must be clean."""
+
+    class DiesMidStream(FakeProvider):
+        def stream(self, system: str, user: str) -> Iterator[str]:
+            self.calls += 1
+            yield "Half an answer "
+            raise RuntimeError("503 connection reset")
+
+    failing = DiesMidStream("gemini", "unused")
+    backup = FakeProvider("groq", "Evacuate low-lying areas [1].")
+    answerer = build_answerer(
+        [failing, backup], results=[make_result("a", "Evacuation protocol.")], tmp_path=tmp_path
+    )
+
+    streamed = []
+    final = None
+    for piece, answer in answerer.stream("what should people do"):
+        if answer is None:
+            streamed.append(piece)
+        else:
+            final = answer
+
+    assert "Half an answer " in streamed  # it was shown, which is why the caller must replace it
+    assert final is not None
+    assert final.text == "Evacuate low-lying areas [1]."
+    assert final.provider == "groq"
+    assert final.failover_used is True

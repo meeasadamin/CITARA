@@ -16,6 +16,7 @@ might differ in some way nobody noticed.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from typing import Any
 
@@ -33,6 +34,21 @@ from citara.retrieval.query import Rewriter, prepare
 from citara.retrieval.reranker import CrossEncoderReranker
 
 log = get_logger("retrieval")
+
+
+def index_version(chunks: list[Chunk]) -> str:
+    """Identity of the served index, changing whenever any chunk's text or citation does.
+
+    Cached answers are keyed on it. A rebuild that adds or revises a document must stop the
+    cache serving answers from the version it replaced; a rebuild that changes nothing must
+    not throw the cache away.
+    """
+    digest = hashlib.sha256()
+    for chunk in sorted(chunks, key=lambda c: c.chunk_id):
+        for part in (chunk.chunk_id, chunk.citation, chunk.content):
+            digest.update(part.encode("utf-8"))
+            digest.update(b"\0")
+    return digest.hexdigest()[:16]
 
 
 class HybridRetriever:
@@ -57,6 +73,7 @@ class HybridRetriever:
         )
         loaded = chunks if chunks is not None else load_chunks(data_dir / "chunks.jsonl")
         self.chunks_by_id: dict[str, Chunk] = {c.chunk_id: c for c in loaded}
+        self.index_version = index_version(loaded)
         # A model rewrites follow-ups far better than the heuristic, but the heuristic is what
         # keeps retrieval working when no key is configured or the provider is unreachable.
         # Construction is lazy, so this costs nothing until a follow-up actually arrives.

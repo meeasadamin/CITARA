@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -142,3 +144,35 @@ class SessionLimiter:
             self._counts.clear()
         else:
             self._counts.pop(session_id, None)
+
+
+class QuotaCooldowns:
+    """Models that reported their daily quota spent, skipped until the cooldown lapses.
+
+    The daily budget is this deployment's own cap; a provider's real quota is whatever it says
+    when it refuses. Once it says the day is spent, asking again before the cooldown only buys
+    a wasted request and a slower fallback on every later question. Process-wide, because the
+    answer provider and the query rewriter call the same model and both should stop.
+    """
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._until: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def mark(self, key: str, seconds: float) -> None:
+        with self._lock:
+            self._until[key] = self._clock() + seconds
+        log.warning("provider quota spent; skipping it", extra={"model": key, "for_s": seconds})
+
+    def remaining(self, key: str) -> float:
+        """Seconds until *key* may be tried again; 0 when it is available."""
+        with self._lock:
+            return max(0.0, self._until.get(key, 0.0) - self._clock())
+
+    def clear(self) -> None:
+        with self._lock:
+            self._until.clear()
+
+
+COOLDOWNS = QuotaCooldowns()

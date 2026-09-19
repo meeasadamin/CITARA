@@ -307,7 +307,19 @@ class GenerationSettings(BaseModel):
     )
     max_output_tokens: int = Field(default=1024, gt=0, description="Token cap (feature 40).")
     stream: bool = Field(default=True, description="Token-by-token rendering (feature 41).")
-    request_timeout_s: float = Field(default=60.0, gt=0)
+    request_timeout_s: float = Field(
+        default=30.0,
+        gt=0,
+        description=(
+            "Per request. A capped answer takes seconds; a request still open at 30 s belongs "
+            "to a struggling provider, and the question is better served by failover."
+        ),
+    )
+    rewrite_timeout_s: float = Field(
+        default=10.0,
+        gt=0,
+        description="Follow-up rewriting is a short request; past this the heuristic is used.",
+    )
     refusal_message: str = Field(
         default=(
             "I could not find this in the indexed NDMA corpus. I answer only from the "
@@ -344,6 +356,19 @@ class ResilienceSettings(BaseModel):
     max_retries: int = Field(default=3, ge=0)
     backoff_base_s: float = Field(default=1.0, gt=0, description="Exponential backoff base.")
     backoff_max_s: float = Field(default=20.0, gt=0)
+    retry_budget_s: float = Field(
+        default=30.0,
+        gt=0,
+        description="Total time one call may spend retrying before failover takes over.",
+    )
+    quota_cooldown_s: int = Field(
+        default=3600,
+        gt=0,
+        description=(
+            "How long a provider that reported its daily quota spent is skipped before being "
+            "tried again, so every later question does not pay for rediscovering it."
+        ),
+    )
     enable_failover: bool = True
     enable_cache: bool = True
     cache_max_entries: int = Field(default=256, gt=0)
@@ -352,7 +377,12 @@ class ResilienceSettings(BaseModel):
         default=40, gt=0, description="Abuse protection on a public URL (feature 52)."
     )
     daily_request_budget: int = Field(
-        default=1000, gt=0, description="Tracked against free-tier quota (feature 48)."
+        default=1000,
+        gt=0,
+        description=(
+            "The deployment's own daily spend cap across all providers (feature 48). Each "
+            "provider's real quota is learned from its rate-limit responses instead."
+        ),
     )
 
 

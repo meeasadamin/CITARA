@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from citara.config import GenerationSettings, Settings, get_settings
 from citara.log import get_logger
-from citara.resilience.budget import RequestBudget
+from citara.resilience.budget import COOLDOWNS, RequestBudget
+from citara.resilience.retry import classify
 from citara.retrieval.query import HeuristicRewriter, looks_like_follow_up
 
 log = get_logger("retrieval.rewriter")
@@ -67,6 +68,8 @@ class LLMRewriter:
         self._client: object | None = None
         self._unavailable = False
         self.budget = RequestBudget.from_settings(self.settings)
+        # The same key the answer provider uses: one model, one quota.
+        self.quota_key = f"gemini:{self.generation.primary_model}"
 
     def _model(self) -> object | None:
         """Lazily build the chat client; None when no key is configured."""
@@ -86,7 +89,10 @@ class LLMRewriter:
                     google_api_key=key.get_secret_value(),
                     temperature=0.0,
                     max_output_tokens=128,
-                    timeout=self.generation.request_timeout_s,
+                    timeout=self.generation.rewrite_timeout_s,
+                    # No retries: a failed rewrite falls back to the heuristic at once, which
+                    # beats making the officer wait for a better search query.
+                    max_retries=0,
                 )
             except Exception:
                 self._unavailable = True
@@ -101,7 +107,7 @@ class LLMRewriter:
 
         # A rewrite is a request against the same quota as an answer. Once the day's budget
         # is gone, the free heuristic is the better use of nothing.
-        if self.budget.state().exhausted:
+        if self.budget.state().exhausted or COOLDOWNS.remaining(self.quota_key):
             return self._fallback.rewrite(question, history)
 
         model = self._model()
@@ -115,7 +121,9 @@ class LLMRewriter:
             self.budget.record()
             response = model.invoke(prompt)  # type: ignore[attr-defined]
             text = _extract_text(getattr(response, "content", "")).strip().strip('"')
-        except Exception:
+        except Exception as error:
+            if classify(error).daily_quota:
+                COOLDOWNS.mark(self.quota_key, self.settings.resilience.quota_cooldown_s)
             log.warning("query rewriting failed; using the heuristic", exc_info=True)
             return self._fallback.rewrite(question, history)
 

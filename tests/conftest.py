@@ -10,15 +10,18 @@ asserting every provider had failed.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+from citara.resilience.budget import COOLDOWNS
 
 _PROVIDER_VARS = ("GOOGLE_API_KEY", "GROQ_API_KEY", "CITARA_GOOGLE_API_KEY", "CITARA_GROQ_API_KEY")
 
 
 @pytest.fixture(autouse=True)
-def isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test a clean environment and its own data directory.
 
     Tests must not depend on whatever the developer happens to have exported: a real
@@ -34,3 +37,8 @@ def isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
     # Set last: the loop above would otherwise remove it.
     monkeypatch.setenv("CITARA_PATHS__DATA_DIR", str(tmp_path / "data"))
+
+    # Quota cooldowns are process-wide by design; one test's spent quota is not another's.
+    COOLDOWNS.clear()
+    yield
+    COOLDOWNS.clear()

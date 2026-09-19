@@ -61,7 +61,7 @@ class _Turn:
     """One question on its way through the pipeline."""
 
     question: str
-    key: str
+    key: str = ""
     started: float = field(default_factory=time.perf_counter)
 
 
@@ -135,6 +135,10 @@ class Answerer:
 
         Anything not generated live - a refusal, a cached answer, a degraded one - is
         delivered complete in a single item.
+
+        The final answer's text is authoritative, and a caller must replace what it streamed
+        with it. A provider that fails part-way is discarded and the next one starts afresh,
+        so pieces already rendered may belong to an answer that no longer exists.
         """
         turn, early = self._begin(question, history, doc_ids, year, session_id)
         if early is not None:
@@ -211,13 +215,16 @@ class Answerer:
         is consulted after the session cap and a hit counts against neither the cap nor the
         budget, because it spends no provider quota - which is what both limits protect.
         """
-        turn = _Turn(question=question, key=self._cache_key(question, history, doc_ids, year))
+        turn = _Turn(question=question)
 
         early = self.preflight(question)
         if early is None and session_id and not self.sessions.allows(session_id):
             early = GeneratedAnswer(text=_SESSION_CAP_MESSAGE, mode="refused")
-        if early is None and self.settings.resilience.enable_cache:
-            early = self._cached(turn.key)
+        if early is None:
+            # Keyed only once the guardrails have passed: a screened question touches nothing.
+            turn.key = self._cache_key(question, history, doc_ids, year)
+            if self.settings.resilience.enable_cache:
+                early = self._cached(turn.key)
 
         if early is not None:
             self._record(question, early, turn.started)
@@ -248,6 +255,9 @@ class Answerer:
     ) -> str:
         """Key on exactly what shapes the answer, and nothing that does not.
 
+        The index version is part of it: after a rebuild, an answer drawn from a document
+        that has since been revised is not the answer the current corpus gives.
+
         History changes retrieval only for a follow-up, and then only through the turns the
         rewriter reads. Keying on more would make a showcase question miss the cache merely
         because it was asked mid-conversation; keying on less would let two different
@@ -259,6 +269,7 @@ class Answerer:
         return cache_key(
             question,
             self.settings.fingerprint(),
+            index=self.retriever.index_version,
             docs=",".join(sorted(doc_ids or [])),
             year=year or "",
             history=context,

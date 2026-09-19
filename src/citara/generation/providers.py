@@ -12,13 +12,14 @@ may act on it.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from itertools import chain
 from typing import Protocol
 
 from citara.config import Settings
 from citara.log import get_logger
-from citara.resilience.budget import RequestBudget
-from citara.resilience.retry import with_retry
+from citara.resilience.budget import COOLDOWNS, RequestBudget
+from citara.resilience.retry import classify, with_retry
 
 log = get_logger("generation.provider")
 
@@ -52,6 +53,10 @@ class Provider(Protocol):
     def warm_up(self) -> None: ...
 
 
+class ProviderUnavailable(RuntimeError):
+    """Raised without sending anything, for a provider that reported its daily quota spent."""
+
+
 class _LangChainProvider:
     """Shared behaviour for the chat providers."""
 
@@ -81,23 +86,54 @@ class _LangChainProvider:
         except Exception:
             log.warning("could not prepare provider", extra={"provider": self.name}, exc_info=True)
 
+    @property
+    def quota_key(self) -> str:
+        """Identity for quota tracking, shared with anything else calling the same model."""
+        return f"{self.name}:{self.model}"
+
+    def _call[T](self, attempt: Callable[[], T], label: str) -> T:
+        """One logical request: skipped while the quota is spent, retried while transient.
+
+        Each attempt counts itself against the budget as it is sent (feature 48), so retries
+        are counted as the requests they are.
+        """
+        cooling = COOLDOWNS.remaining(self.quota_key)
+        if cooling:
+            raise ProviderUnavailable(f"{self.name} quota spent; next attempt in {cooling:.0f} s")
+        try:
+            return with_retry(attempt, self.settings.resilience, label=f"{self.name}.{label}")
+        except Exception as error:
+            if classify(error).daily_quota:
+                COOLDOWNS.mark(self.quota_key, self.settings.resilience.quota_cooldown_s)
+            raise
+
     def generate(self, system: str, user: str) -> str:
         """Ask the model, waiting out transient failures before giving up (feature 50)."""
 
-        def call() -> str:
+        def attempt() -> str:
             chat = self._chat()
-            # Counted per attempt, before sending: a retry is another request against the
-            # quota, and so is one that fails once it has left the process (feature 48).
             self.budget.record()
             response = chat.invoke(self._messages(system, user))  # type: ignore[attr-defined]
             return extract_text(getattr(response, "content", "")).strip()
 
-        return with_retry(call, self.settings.resilience, label=f"{self.name}.generate")
+        return self._call(attempt, "generate")
 
     def stream(self, system: str, user: str) -> Iterator[str]:
-        chat = self._chat()
-        self.budget.record()
-        for piece in chat.stream(self._messages(system, user)):  # type: ignore[attr-defined]
+        """Stream the answer, retrying only until the first piece arrives.
+
+        The request goes out on the first read, so that is where a rate limit surfaces - and
+        while nothing has been shown, a retry is invisible to the reader. After that, a
+        failure propagates: restarting would repeat text already on screen.
+        """
+
+        def attempt() -> tuple[object | None, Iterator[object]]:
+            chat = self._chat()
+            self.budget.record()
+            pieces = iter(chat.stream(self._messages(system, user)))  # type: ignore[attr-defined]
+            return next(pieces, None), pieces
+
+        first, rest = self._call(attempt, "stream")
+        for piece in chain([first] if first is not None else [], rest):
             text = extract_text(getattr(piece, "content", ""))
             if text:
                 yield text
@@ -126,6 +162,9 @@ class GeminiProvider(_LangChainProvider):
             temperature=config.temperature,
             max_output_tokens=config.max_output_tokens,
             timeout=config.request_timeout_s,
+            # The SDK would otherwise retry up to six times inside every attempt made here,
+            # uncounted and unbounded; resilience.retry is the one retry layer.
+            max_retries=0,
         )
 
 
@@ -152,6 +191,7 @@ class GroqProvider(_LangChainProvider):
             temperature=config.temperature,
             max_tokens=config.max_output_tokens,
             timeout=config.request_timeout_s,
+            max_retries=0,  # see GeminiProvider: one retry layer, in resilience.retry
         )
 
 
