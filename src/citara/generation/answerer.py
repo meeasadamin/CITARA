@@ -68,25 +68,33 @@ class Answerer:
         provider quota.
         """
         started = time.perf_counter()
-        screening = screen_input(question)
-        if screening.blocked:
-            answer = GeneratedAnswer(
-                text=_BLOCKED_MESSAGE,
-                mode="blocked",
-                screening=",".join(screening.reasons),
-            )
-            self._record(question, answer, started)
-            return answer
-
-        if is_out_of_scope(question):
-            answer = GeneratedAnswer(text=SCOPE_MESSAGE, mode="out_of_scope")
-            self._record(question, answer, started)
-            return answer
+        blocked = self.preflight(question)
+        if blocked is not None:
+            self._record(question, blocked, started)
+            return blocked
 
         outcome = self.retriever.retrieve(question, history=history, doc_ids=doc_ids, year=year)
         answer = self.answer_from(question, outcome)
         self._record(question, answer, started, outcome)
         return answer
+
+    def preflight(self, question: str) -> GeneratedAnswer | None:
+        """Guardrail checks that run before anything else, or None to continue.
+
+        Every entry point must pass through this. Screening lived only in answer() at first,
+        so the streaming path - the one the interface uses - reached retrieval unscreened and
+        was protected only by whatever the relevance floor happened to reject.
+        """
+        screening = screen_input(question)
+        if screening.blocked:
+            return GeneratedAnswer(
+                text=_BLOCKED_MESSAGE,
+                mode="blocked",
+                screening=",".join(screening.reasons),
+            )
+        if is_out_of_scope(question):
+            return GeneratedAnswer(text=SCOPE_MESSAGE, mode="out_of_scope")
+        return None
 
     def _record(
         self,
@@ -198,9 +206,17 @@ class Answerer:
         Refusals and degraded answers are not streamed: there is nothing being generated, so
         the complete text is delivered in one piece.
         """
+        started = time.perf_counter()
+        blocked = self.preflight(question)
+        if blocked is not None:
+            self._record(question, blocked, started)
+            yield blocked.text, blocked
+            return
+
         outcome = self.retriever.retrieve(question, history=history)
         if outcome.refused or not outcome.results:
             answer = self.answer_from(question, outcome)
+            self._record(question, answer, started, outcome)
             yield answer.text, answer
             return
 
@@ -213,7 +229,6 @@ class Answerer:
             retrieval_ms=outcome.retrieval_ms + outcome.rerank_ms,
             injection_flags=injection_flags,
         )
-        started = time.perf_counter()
 
         for index, provider in enumerate(self.providers):
             pieces: list[str] = []
@@ -246,6 +261,7 @@ class Answerer:
             answer.invalid_markers, answer.uncited_sentences = validate(
                 answer.text, answer.citations
             )
+        self._record(question, answer, started, outcome)
         yield "", answer
 
     def _degrade(self, answer: GeneratedAnswer) -> GeneratedAnswer:
