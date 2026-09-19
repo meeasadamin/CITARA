@@ -14,20 +14,28 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from typing import Any
 
 from citara.config import Settings, get_settings
 from citara.generation.citations import build_citations, validate
-from citara.generation.models import GeneratedAnswer
+from citara.generation.models import Citation, GeneratedAnswer
 from citara.generation.prompts import SYSTEM_PROMPT, build_user_prompt
 from citara.generation.providers import Provider, available_providers
 from citara.guardrails.injection import screen_input
 from citara.guardrails.query_log import record_query
 from citara.guardrails.scope import SCOPE_MESSAGE, is_out_of_scope
 from citara.log import get_logger, stage
+from citara.resilience.budget import RequestBudget, SessionLimiter
+from citara.resilience.cache import AnswerCache, cache_key
 from citara.retrieval.models import RetrievalOutcome
 from citara.retrieval.retriever import HybridRetriever
 
 log = get_logger("generation")
+
+_SESSION_CAP_MESSAGE = (
+    "This session has reached its question limit. The limit exists so one visitor cannot "
+    "exhaust the shared free-tier quota this prototype runs on. Reload the page to continue."
+)
 
 _BLOCKED_MESSAGE = (
     "That request looks like an attempt to change how this assistant works. CITARA answers "
@@ -53,6 +61,15 @@ class Answerer:
         self.settings = settings or get_settings()
         self.retriever = retriever or HybridRetriever(self.settings)
         self.providers = providers if providers is not None else available_providers(self.settings)
+        paths = self.settings.paths
+        resilience = self.settings.resilience
+        self.cache = AnswerCache(
+            paths.resolved(paths.cache_dir), resilience.cache_ttl_s, resilience.cache_max_entries
+        )
+        self.budget = RequestBudget(
+            paths.resolved(paths.usage_path), resilience.daily_request_budget
+        )
+        self.sessions = SessionLimiter(resilience.session_query_cap)
 
     def answer(
         self,
@@ -60,6 +77,7 @@ class Answerer:
         history: list[str] | None = None,
         doc_ids: list[str] | None = None,
         year: int | None = None,
+        session_id: str = "",
     ) -> GeneratedAnswer:
         """Answer *question*, or refuse.
 
@@ -73,10 +91,84 @@ class Answerer:
             self._record(question, blocked, started)
             return blocked
 
+        if session_id and not self.sessions.allows(session_id):
+            answer = GeneratedAnswer(text=_SESSION_CAP_MESSAGE, mode="refused")
+            self._record(question, answer, started)
+            return answer
+
+        key = cache_key(
+            question,
+            self.settings.fingerprint(),
+            docs=",".join(sorted(doc_ids or [])),
+            year=year or "",
+            history=history[-1] if history else "",
+        )
+        # A cache hit is checked after the session cap but recorded against neither budget
+        # nor session: it spends no provider quota, which is what both limits protect.
+        if self.settings.resilience.enable_cache:
+            cached = self.cache.get(key)
+            if cached:
+                answer = self._from_cache(cached)
+                self._record(question, answer, started)
+                return answer
+
         outcome = self.retriever.retrieve(question, history=history, doc_ids=doc_ids, year=year)
         answer = self.answer_from(question, outcome)
+
+        if session_id:
+            self.sessions.record(session_id)
+        if answer.mode == "generated":
+            self.budget.record()
+            if self.settings.resilience.enable_cache:
+                self.cache.set(key, self._to_cache(answer))
+
         self._record(question, answer, started, outcome)
         return answer
+
+    @staticmethod
+    def _to_cache(answer: GeneratedAnswer) -> dict[str, Any]:
+        """The parts of an answer worth storing: the text and how to verify it."""
+        return {
+            "text": answer.text,
+            "provider": answer.provider,
+            "model": answer.model,
+            "citations": [
+                {
+                    "marker": c.marker,
+                    "citation": c.citation,
+                    "chunk_id": c.chunk_id,
+                    "doc_id": c.doc_id,
+                    "page_start": c.page_start,
+                    "page_end": c.page_end,
+                    "used": c.used,
+                }
+                for c in answer.citations
+            ],
+        }
+
+    @staticmethod
+    def _from_cache(payload: dict[str, Any]) -> GeneratedAnswer:
+        """Rebuild an answer from the cache, marked so the interface can say it is cached."""
+        citations = [
+            Citation(
+                marker=int(item["marker"]),
+                citation=str(item["citation"]),
+                chunk_id=str(item["chunk_id"]),
+                doc_id=str(item["doc_id"]),
+                page_start=int(item["page_start"]),
+                page_end=int(item["page_end"]),
+                used=bool(item["used"]),
+            )
+            for item in payload.get("citations", [])
+        ]
+        return GeneratedAnswer(
+            text=str(payload.get("text", "")),
+            mode="generated",
+            citations=citations,
+            provider=str(payload.get("provider", "")),
+            model=str(payload.get("model", "")),
+            cached=True,
+        )
 
     def preflight(self, question: str) -> GeneratedAnswer | None:
         """Guardrail checks that run before anything else, or None to continue.
@@ -152,6 +244,18 @@ class Answerer:
         answer.injection_flags = injection_flags
         with stage(log, "generate", providers=len(self.providers)) as details:
             started = time.perf_counter()
+
+            # Running out of quota is not a failure to report, it is a reason to stop
+            # summarising. The reranked evidence and its citations are still correct, and
+            # they were the actual need; the same path serves a total provider outage.
+            budget = self.budget.state()
+            if budget.exhausted:
+                answer = self._degrade(answer)
+                answer.error = "daily request budget exhausted"
+                answer.generation_ms = round((time.perf_counter() - started) * 1000, 1)
+                details.update({"mode": answer.mode, "budget_exhausted": True})
+                return answer
+
             for index, provider in enumerate(self.providers):
                 try:
                     text = provider.generate(SYSTEM_PROMPT, user_prompt)

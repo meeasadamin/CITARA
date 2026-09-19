@@ -83,6 +83,7 @@ flowchart TD
 - [x] Retrieval — dense + BM25, RRF fusion, cross-encoder gate, floor calibrated on the gold set ([`eval/RESULTS.md`](eval/RESULTS.md))
 - [x] Grounded generation — cited answers, refusal before any model call, Gemini to Groq failover, degraded mode
 - [x] Guardrails — injection defense on input and on retrieved text, scope control, non-identifying query log
+- [x] Resilience — retry with backoff, disk cache, daily budget, session cap, degraded mode
 - [ ] Streamlit interface
 - [x] Ablation study — five configurations from one command ([`eval/ABLATION.md`](eval/ABLATION.md))
 - [ ] Faithfulness and answer-relevance scoring, latency benchmarks

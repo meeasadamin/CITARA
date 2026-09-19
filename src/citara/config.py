@@ -80,6 +80,12 @@ class Paths(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
+    def usage_path(self) -> Path:
+        """Daily request counts, persisted so a restart does not reset the budget."""
+        return self.data_dir / "usage.json"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def query_log_path(self) -> Path:
         """Non-identifying query log kept for evaluation (feature 46)."""
         return self.data_dir / "queries.jsonl"

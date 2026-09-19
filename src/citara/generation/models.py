@@ -39,6 +39,7 @@ class GeneratedAnswer:
     generation_ms: float = 0.0
     failover_used: bool = False
     error: str = ""
+    cached: bool = False
     screening: str = "none"
     injection_flags: list[str] = field(default_factory=list)
 

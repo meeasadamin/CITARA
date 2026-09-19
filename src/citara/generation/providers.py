@@ -17,6 +17,7 @@ from typing import Protocol
 
 from citara.config import Settings
 from citara.log import get_logger
+from citara.resilience.retry import with_retry
 
 log = get_logger("generation.provider")
 
@@ -71,8 +72,13 @@ class _LangChainProvider:
         return [("system", system), ("human", user)]
 
     def generate(self, system: str, user: str) -> str:
-        response = self._chat().invoke(self._messages(system, user))  # type: ignore[attr-defined]
-        return extract_text(getattr(response, "content", "")).strip()
+        """Ask the model, waiting out transient failures before giving up (feature 50)."""
+
+        def call() -> str:
+            response = self._chat().invoke(self._messages(system, user))  # type: ignore[attr-defined]
+            return extract_text(getattr(response, "content", "")).strip()
+
+        return with_retry(call, self.settings.resilience, label=f"{self.name}.generate")
 
     def stream(self, system: str, user: str) -> Iterator[str]:
         for piece in self._chat().stream(self._messages(system, user)):  # type: ignore[attr-defined]

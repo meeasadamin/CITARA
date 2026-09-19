@@ -153,7 +153,11 @@ def test_fingerprint_ignores_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_derived_paths_sit_under_data_dir() -> None:
-    s = make_settings()
+    from citara.config import Paths
+
+    # Explicit defaults: the test fixture redirects the data directory for isolation, and
+    # this is asserting how paths derive from it, not what the environment happens to say.
+    s = make_settings(paths=Paths())
     assert s.paths.chroma_dir == Path("data/chroma")
     # JSON, not a pickle: an index file that executes code on load does not belong in a
     # public repository, and rebuilding BM25 costs milliseconds.
