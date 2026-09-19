@@ -19,6 +19,11 @@ from citara.generation.models import Citation
 from citara.retrieval.models import RetrievedChunk
 
 _MARKER = re.compile(r"\[(\d+)\]")
+# Models cite in their own house styles despite the prompt. Groq's gpt-oss-120b writes
+# 【1】 or 【1†L5-L9】 (a line-range suffix), and any model may group markers as [1, 2].
+# U+FF0C is the full-width comma those models sometimes use between grouped markers.
+_VARIANT_MARKER = re.compile(r"[\[【]\s*(\d+(?:\s*[,\uff0c]\s*\d+)*)\s*(?:†[^\]】]*)?[\]】]")
+_MARKER_SEPARATOR = re.compile(r"\s*[,\uff0c]\s*")
 # Sentences that assert nothing factual do not need a source.
 _NON_CLAIM = re.compile(
     r"^\s*(here (is|are)|the following|in summary|note that|according to the evidence|"
@@ -56,6 +61,22 @@ def build_citations(results: list[RetrievedChunk]) -> list[Citation]:
         )
         for index, result in enumerate(results, start=1)
     ]
+
+
+def normalise_markers(text: str) -> str:
+    """Rewrite every citation style a model uses into the canonical ``[1][2]``.
+
+    Found live: a failover answer from Groq was fully grounded but cited as 【1†L5-L9】, so
+    validation saw no citations and flagged all 13 sentences as uncited - and the interface
+    would have shown an answer with no sources. The providers must be interchangeable down
+    to their citation markers, or failover quietly degrades the one guarantee that matters.
+    """
+
+    def canonical(match: re.Match[str]) -> str:
+        numbers = _MARKER_SEPARATOR.split(match.group(1).strip())
+        return "".join(f"[{number}]" for number in numbers)
+
+    return _VARIANT_MARKER.sub(canonical, text)
 
 
 def markers_in(text: str) -> list[int]:

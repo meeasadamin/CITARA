@@ -693,3 +693,64 @@ def test_a_provider_failing_mid_stream_leaves_nothing_in_the_final_answer(tmp_pa
     assert final.text == "Evacuate low-lying areas [1]."
     assert final.provider == "groq"
     assert final.failover_used is True
+
+
+# --- provider citation styles --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("Runs 1 July to 30 September【1】.", "Runs 1 July to 30 September[1]."),
+        ("Coordinate operations【1†L5-L9】.", "Coordinate operations[1]."),
+        ("Stockpiles are provincial 【2†source】.", "Stockpiles are provincial [2]."),
+        ("Both apply [1, 2].", "Both apply [1][2]."),
+        ("Both apply 【1\uff0c3】.", "Both apply [1][3]."),  # full-width comma
+        ("Already canonical [1][2].", "Already canonical [1][2]."),
+        (
+            "A [link](https://ndma.gov.pk) is not a marker.",
+            "A [link](https://ndma.gov.pk) is not a marker.",
+        ),
+    ],
+)
+def test_every_citation_style_becomes_canonical(raw: str, canonical: str) -> None:
+    from citara.generation.citations import normalise_markers
+
+    assert normalise_markers(raw) == canonical
+
+
+GROQ_STYLE = (
+    "PDMAs coordinate provincial emergency response operations【1†L5-L9】. "
+    "They manage provincial stockpiles of relief goods 【2】."
+)
+
+
+def test_a_groq_styled_answer_is_fully_cited(tmp_path: Path) -> None:
+    """Regression from the live failover run: grounded, yet read as 13 uncited sentences."""
+    answerer = build_answerer(
+        [FakeProvider("groq", GROQ_STYLE)],
+        results=[make_result("a", "Coordination."), make_result("b", "Stockpiles.")],
+        tmp_path=tmp_path,
+    )
+
+    answer = answerer.answer("what do PDMAs do in a flood")
+
+    assert "【" not in answer.text
+    assert [c.marker for c in answer.cited] == [1, 2]
+    assert answer.invalid_markers == []
+    assert answer.uncited_sentences == 0
+
+
+def test_a_groq_styled_stream_ends_fully_cited(tmp_path: Path) -> None:
+    """The streamed pieces show the raw style; the authoritative final text is canonical."""
+    answerer = build_answerer(
+        [FakeProvider("groq", GROQ_STYLE)],
+        results=[make_result("a", "Coordination."), make_result("b", "Stockpiles.")],
+        tmp_path=tmp_path,
+    )
+
+    final = next(a for _, a in answerer.stream("what do PDMAs do in a flood") if a is not None)
+
+    assert "【" not in final.text
+    assert [c.marker for c in final.cited] == [1, 2]
+    assert final.uncited_sentences == 0

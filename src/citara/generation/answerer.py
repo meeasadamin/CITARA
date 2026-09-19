@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from citara.config import Settings, get_settings
-from citara.generation.citations import build_citations, validate
+from citara.generation.citations import build_citations, normalise_markers, validate
 from citara.generation.models import Citation, GeneratedAnswer
 from citara.generation.prompts import SYSTEM_PROMPT, build_user_prompt
 from citara.generation.providers import Provider, available_providers
@@ -487,9 +487,14 @@ class Answerer:
 
     @staticmethod
     def _check_citations(answer: GeneratedAnswer) -> None:
-        """Validate a generated answer's citations against the evidence it was given."""
+        """Canonicalise, then validate, a generated answer's citations.
+
+        Both entry points pass through here, so every provider's answer reaches the cache and
+        the interface with markers in the one form the citation chips understand.
+        """
         if answer.mode != "generated":
             return
+        answer.text = normalise_markers(answer.text)
         answer.invalid_markers, answer.uncited_sentences = validate(answer.text, answer.citations)
         if answer.invalid_markers:
             log.warning(
