@@ -20,11 +20,19 @@ from citara.generation.citations import build_citations, validate
 from citara.generation.models import GeneratedAnswer
 from citara.generation.prompts import SYSTEM_PROMPT, build_user_prompt
 from citara.generation.providers import Provider, available_providers
+from citara.guardrails.injection import screen_input
+from citara.guardrails.query_log import record_query
+from citara.guardrails.scope import SCOPE_MESSAGE, is_out_of_scope
 from citara.log import get_logger, stage
 from citara.retrieval.models import RetrievalOutcome
 from citara.retrieval.retriever import HybridRetriever
 
 log = get_logger("generation")
+
+_BLOCKED_MESSAGE = (
+    "That request looks like an attempt to change how this assistant works. CITARA answers "
+    "questions from NDMA's published documents and cannot take instructions from a message."
+)
 
 _DEGRADED_NOTICE = (
     "Answer generation is unavailable right now, so the assistant cannot summarise. "
@@ -53,9 +61,56 @@ class Answerer:
         doc_ids: list[str] | None = None,
         year: int | None = None,
     ) -> GeneratedAnswer:
-        """Answer *question*, or refuse."""
+        """Answer *question*, or refuse.
+
+        Screening and scope control run before retrieval: an instruction-override attempt or
+        a question about French geography should not reach the corpus, the model, or the
+        provider quota.
+        """
+        started = time.perf_counter()
+        screening = screen_input(question)
+        if screening.blocked:
+            answer = GeneratedAnswer(
+                text=_BLOCKED_MESSAGE,
+                mode="blocked",
+                screening=",".join(screening.reasons),
+            )
+            self._record(question, answer, started)
+            return answer
+
+        if is_out_of_scope(question):
+            answer = GeneratedAnswer(text=SCOPE_MESSAGE, mode="out_of_scope")
+            self._record(question, answer, started)
+            return answer
+
         outcome = self.retriever.retrieve(question, history=history, doc_ids=doc_ids, year=year)
-        return self.answer_from(question, outcome)
+        answer = self.answer_from(question, outcome)
+        self._record(question, answer, started, outcome)
+        return answer
+
+    def _record(
+        self,
+        question: str,
+        answer: GeneratedAnswer,
+        started: float,
+        outcome: RetrievalOutcome | None = None,
+    ) -> None:
+        """Append the query to the non-identifying log (feature 46)."""
+        if not self.settings.guardrails.log_queries:
+            return
+        record_query(
+            self.settings.paths.resolved(self.settings.paths.query_log_path),
+            question,
+            rewritten=outcome.rewritten_query if outcome else "",
+            mode=answer.mode,
+            refused=answer.refused,
+            refusal_reason=outcome.refusal_reason if outcome else "",
+            best_score=outcome.best_score if outcome else None,
+            evidence=len(answer.evidence),
+            documents=[result.chunk.doc_id for result in answer.evidence],
+            latency_ms=(time.perf_counter() - started) * 1000,
+            screening=answer.screening,
+        )
 
     def answer_from(self, question: str, outcome: RetrievalOutcome) -> GeneratedAnswer:
         """Generate from an existing retrieval outcome."""
@@ -69,7 +124,7 @@ class Answerer:
             )
 
         citations = build_citations(outcome.results)
-        user_prompt = build_user_prompt(question, outcome.results)
+        user_prompt, injection_flags = build_user_prompt(question, outcome.results)
         answer = GeneratedAnswer(
             text="",
             citations=citations,
@@ -77,6 +132,7 @@ class Answerer:
             retrieval_ms=outcome.retrieval_ms + outcome.rerank_ms,
         )
 
+        answer.injection_flags = injection_flags
         with stage(log, "generate", providers=len(self.providers)) as details:
             started = time.perf_counter()
             for index, provider in enumerate(self.providers):
@@ -123,6 +179,7 @@ class Answerer:
                     "cited": len(answer.cited),
                     "invalid_markers": len(answer.invalid_markers),
                     "uncited_sentences": answer.uncited_sentences,
+                    "evidence_injection": answer.injection_flags,
                 }
             )
 
@@ -148,12 +205,13 @@ class Answerer:
             return
 
         citations = build_citations(outcome.results)
-        user_prompt = build_user_prompt(question, outcome.results)
+        user_prompt, injection_flags = build_user_prompt(question, outcome.results)
         answer = GeneratedAnswer(
             text="",
             citations=citations,
             evidence=outcome.results,
             retrieval_ms=outcome.retrieval_ms + outcome.rerank_ms,
+            injection_flags=injection_flags,
         )
         started = time.perf_counter()
 

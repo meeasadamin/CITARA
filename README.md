@@ -82,7 +82,7 @@ flowchart TD
 - [x] Dense + sparse indexing — ChromaDB (cosine, tuned HNSW) + BM25 built in one pass, incremental rebuilds
 - [x] Retrieval — dense + BM25, RRF fusion, cross-encoder gate, floor calibrated on the gold set ([`eval/RESULTS.md`](eval/RESULTS.md))
 - [x] Grounded generation — cited answers, refusal before any model call, Gemini to Groq failover, degraded mode
-- [ ] Guardrails (prompt-injection defense, scope control)
+- [x] Guardrails — injection defense on input and on retrieved text, scope control, non-identifying query log
 - [ ] Streamlit interface
 - [x] Ablation study — five configurations from one command ([`eval/ABLATION.md`](eval/ABLATION.md))
 - [ ] Faithfulness and answer-relevance scoring, latency benchmarks

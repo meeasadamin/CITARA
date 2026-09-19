@@ -19,6 +19,7 @@ floor still does not contain the answer.
 
 from __future__ import annotations
 
+from citara.guardrails.injection import sanitise_evidence
 from citara.retrieval.models import RetrievedChunk
 
 SYSTEM_PROMPT = """You are CITARA, a decision-support assistant for disaster management in \
@@ -62,18 +63,34 @@ Answer the question using only the evidence above, citing evidence numbers in sq
 brackets after each claim."""
 
 
-def format_evidence(results: list[RetrievedChunk]) -> str:
-    """Render evidence blocks, numbered so citations can be checked mechanically."""
-    return "\n\n".join(
-        _EVIDENCE_TEMPLATE.format(
-            number=index,
-            citation=result.chunk.citation,
-            content=result.chunk.content.strip(),
+def format_evidence(results: list[RetrievedChunk]) -> tuple[str, list[str]]:
+    """Render evidence blocks, numbered so citations can be checked mechanically.
+
+    Each passage is sanitised on the way in: evidence tags are neutralised so a chunk cannot
+    close its own block and address the model directly, and instruction-shaped text is
+    annotated as quoted content (feature 43).
+
+    Returns the rendered evidence and the reasons any passage was flagged.
+    """
+    blocks: list[str] = []
+    flags: list[str] = []
+    for index, result in enumerate(results, start=1):
+        content, reasons = sanitise_evidence(result.chunk.content.strip())
+        flags.extend(reasons)
+        blocks.append(
+            _EVIDENCE_TEMPLATE.format(
+                number=index,
+                citation=result.chunk.citation,
+                content=content,
+            )
         )
-        for index, result in enumerate(results, start=1)
-    )
+    return "\n\n".join(blocks), sorted(set(flags))
 
 
-def build_user_prompt(question: str, results: list[RetrievedChunk]) -> str:
-    """Assemble the question and its delimited evidence."""
-    return USER_TEMPLATE.format(question=question, evidence=format_evidence(results))
+def build_user_prompt(question: str, results: list[RetrievedChunk]) -> tuple[str, list[str]]:
+    """Assemble the question and its delimited evidence.
+
+    Returns the prompt and the injection reasons found in the retrieved text.
+    """
+    evidence, flags = format_evidence(results)
+    return USER_TEMPLATE.format(question=question, evidence=evidence), flags

@@ -7,7 +7,7 @@ from typing import Literal
 
 from citara.retrieval.models import RetrievedChunk
 
-AnswerMode = Literal["generated", "refused", "degraded", "out_of_scope"]
+AnswerMode = Literal["generated", "refused", "degraded", "out_of_scope", "blocked"]
 
 
 @dataclass
@@ -39,10 +39,12 @@ class GeneratedAnswer:
     generation_ms: float = 0.0
     failover_used: bool = False
     error: str = ""
+    screening: str = "none"
+    injection_flags: list[str] = field(default_factory=list)
 
     @property
     def refused(self) -> bool:
-        return self.mode in {"refused", "out_of_scope"}
+        return self.mode in {"refused", "out_of_scope", "blocked"}
 
     @property
     def total_ms(self) -> float:
