@@ -2,16 +2,19 @@
 
 Queries are kept so retrieval can be improved against what people actually ask - the gold set
 was written by one person and cannot anticipate everything. Nothing identifying is recorded:
-no user, no session, no address. What is stored is the question, what the pipeline did with
-it, and how well it went.
+no user, no session, no address.
 
-The question text itself is retained because it is the whole point of the log, so the
-interface must say that queries are recorded, and the disclaimer does.
+The question text itself is retained, because it is the whole point of the log, but people
+put themselves into questions. "When will relief reach my area, my number is 0300-..." is a
+realistic thing to type into a disaster-response tool, and a log that keeps it has captured
+identifying information no matter what the surrounding fields contain. Contact details are
+therefore redacted before the line is written, not afterwards.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +22,32 @@ from typing import Any
 from citara.log import get_logger
 
 log = get_logger("guardrails.query_log")
+
+# Patterns are deliberately broad: over-redacting a question costs a little analytical value,
+# while under-redacting stores someone's phone number forever.
+_REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+"), "[email]"),
+    # Pakistani mobile and landline shapes, with or without country code and separators.
+    (re.compile(r"(?<!\w)(?:\+?92[\s-]?|0)\d{2,4}[\s-]?\d{6,8}(?!\w)"), "[phone]"),
+    # CNIC: 13 digits, usually 5-7-1.
+    (re.compile(r"(?<!\w)\d{5}[\s-]?\d{7}[\s-]?\d(?!\w)"), "[id-number]"),
+    # Any other long digit run that could be an account or identity number. Four-digit years
+    # and the figures this corpus is full of stay intact.
+    (re.compile(r"(?<!\w)\d{9,}(?!\w)"), "[number]"),
+)
+
+# A question longer than this is a paste, not a question, and is more likely to carry
+# incidental personal content.
+_MAX_LOGGED_CHARS = 500
+
+
+def redact(text: str) -> str:
+    """Remove contact and identity details from text bound for the log."""
+    for pattern, replacement in _REDACTIONS:
+        text = pattern.sub(replacement, text)
+    if len(text) > _MAX_LOGGED_CHARS:
+        text = text[:_MAX_LOGGED_CHARS] + "...[truncated]"
+    return text
 
 
 def record_query(
@@ -42,8 +71,8 @@ def record_query(
     """
     entry: dict[str, Any] = {
         "ts": datetime.now(UTC).isoformat(timespec="seconds"),
-        "question": question,
-        "rewritten": rewritten if rewritten != question else "",
+        "question": redact(question),
+        "rewritten": redact(rewritten) if rewritten and rewritten != question else "",
         "mode": mode,
         "refused": refused,
         "refusal_reason": refusal_reason,

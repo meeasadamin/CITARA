@@ -121,7 +121,16 @@ class Answerer:
         )
 
     def answer_from(self, question: str, outcome: RetrievalOutcome) -> GeneratedAnswer:
-        """Generate from an existing retrieval outcome."""
+        """Generate from an existing retrieval outcome.
+
+        Screening repeats here even though the entry points already ran it: this method is
+        public, and the check costs a few regular expressions against the cost of sending an
+        injection attempt to a model.
+        """
+        blocked = self.preflight(question)
+        if blocked is not None:
+            return blocked
+
         if outcome.refused or not outcome.results:
             log.info("refusing", extra={"reason": outcome.refusal_reason, "question": question})
             return GeneratedAnswer(

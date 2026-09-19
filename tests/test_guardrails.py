@@ -12,8 +12,13 @@ from citara.guardrails.injection import (
     sanitise_evidence,
     screen_input,
 )
-from citara.guardrails.query_log import read_queries, record_query
-from citara.guardrails.scope import SCOPE_MESSAGE, is_out_of_scope, mentions_domain
+from citara.guardrails.query_log import read_queries, record_query, redact
+from citara.guardrails.scope import (
+    PROTOTYPE_DISCLAIMER,
+    SCOPE_MESSAGE,
+    is_out_of_scope,
+    mentions_domain,
+)
 
 # --- screening user input (features 42, 44) -----------------------------------------
 
@@ -180,3 +185,49 @@ def test_reading_a_missing_or_corrupt_log(tmp_path: Path) -> None:
     path = tmp_path / "partial.jsonl"
     path.write_text('{"question": "ok"}\nnot json\n', encoding="utf-8")
     assert [e["question"] for e in read_queries(path)] == ["ok"]
+
+
+# --- redaction of personal details (feature 46) ---------------------------------------
+
+
+def test_contact_details_are_redacted_before_logging(tmp_path: Path) -> None:
+    """A realistic disaster-response question carries the asker's own contact details."""
+    path = tmp_path / "queries.jsonl"
+    record_query(
+        path,
+        "My number is 0300-1234567 and email asad@example.com, when will relief reach Dadu?",
+    )
+    logged = read_queries(path)[0]["question"]
+    assert "0300-1234567" not in logged
+    assert "asad@example.com" not in logged
+    assert "[phone]" in logged and "[email]" in logged
+    assert "when will relief reach Dadu?" in logged  # the useful part survives
+
+
+@pytest.mark.parametrize(
+    ("text", "marker"),
+    [
+        ("call +92 300 1234567 now", "[phone]"),
+        ("cnic 42101-1234567-1 attached", "[id-number]"),
+        ("account 123456789012", "[number]"),
+        ("reach me at first.last@ndma.gov.pk", "[email]"),
+    ],
+)
+def test_identifier_shapes_are_redacted(text: str, marker: str) -> None:
+    assert marker in redact(text)
+
+
+def test_corpus_figures_and_years_survive_redaction() -> None:
+    """Over-redaction would destroy the log's value: these are the numbers people ask about."""
+    text = "What were the 2022 floods damages of PKR 800 billion and 353,594 million?"
+    assert redact(text) == text
+
+
+def test_overlong_questions_are_truncated() -> None:
+    assert "[truncated]" in redact("word " * 400)
+
+
+def test_disclaimer_states_what_the_system_is_not() -> None:
+    """Feature 47: the interface must say this plainly, so the text lives with the guardrails."""
+    assert "not an official NDMA system" in PROTOTYPE_DISCLAIMER
+    assert "cited source page" in PROTOTYPE_DISCLAIMER

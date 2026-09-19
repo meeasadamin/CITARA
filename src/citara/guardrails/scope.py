@@ -119,6 +119,12 @@ _DOMAIN_TERMS = frozenset(
     ]
 )
 
+PROTOTYPE_DISCLAIMER = (
+    "CITARA is an independent decision-support prototype built on publicly available NDMA "
+    "documents. It is not an official NDMA system, and its answers must be checked against "
+    "the cited source page before being acted on."
+)
+
 SCOPE_MESSAGE = (
     "That question falls outside what this assistant covers. CITARA answers only from "
     "NDMA's published disaster-management documents - response plans, contingency plans, "

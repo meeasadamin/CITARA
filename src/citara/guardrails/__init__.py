@@ -7,10 +7,16 @@ from citara.guardrails.injection import (
     sanitise_evidence,
     screen_input,
 )
-from citara.guardrails.query_log import read_queries, record_query
-from citara.guardrails.scope import SCOPE_MESSAGE, is_out_of_scope, mentions_domain
+from citara.guardrails.query_log import read_queries, record_query, redact
+from citara.guardrails.scope import (
+    PROTOTYPE_DISCLAIMER,
+    SCOPE_MESSAGE,
+    is_out_of_scope,
+    mentions_domain,
+)
 
 __all__ = [
+    "PROTOTYPE_DISCLAIMER",
     "SCOPE_MESSAGE",
     "ScreeningResult",
     "find_evidence_injection",
@@ -19,6 +25,7 @@ __all__ = [
     "neutralise_delimiters",
     "read_queries",
     "record_query",
+    "redact",
     "sanitise_evidence",
     "screen_input",
 ]
