@@ -17,6 +17,16 @@ more dangerous than no answer.
 > **Disclaimer:** CITARA is an independent decision-support prototype built on publicly available documents.
 > It is not an official NDMA system.
 
+<p align="center">
+  <img src="assets/screenshots/phone-answer.png" width="270" alt="A cited answer on a phone: two sources disagree on the Quetta earthquake death toll, and each figure carries its own page chip">
+  &nbsp;&nbsp;
+  <img src="assets/screenshots/phone-refusal.png" width="270" alt="A refusal on a phone: the corpus has no Gwadar-specific heatwave threshold, so no model is called">
+</p>
+
+*Left: two documents disagree on the 1935 Quetta death toll, and the answer cites each figure to
+its page instead of silently picking one. Right: a plausible operational question the corpus
+cannot answer is refused before any model is called.*
+
 ---
 
 ## The problem
@@ -84,7 +94,7 @@ flowchart TD
 - [x] Grounded generation — cited answers, refusal before any model call, Gemini to Groq failover, degraded mode
 - [x] Guardrails — injection defense on input and on retrieved text, scope control, non-identifying query log
 - [x] Resilience — retry with backoff, disk cache, per-request daily budget, session cap, degraded mode, startup warm-up
-- [ ] Streamlit interface
+- [x] Streamlit interface — page-level citation chips, source panel, evidence band, corpus boundary, refusal and error states, cold-start loading state, transcript export; tested at phone width
 - [x] Ablation study — five configurations from one command ([`eval/ABLATION.md`](eval/ABLATION.md))
 - [ ] Faithfulness and answer-relevance scoring, latency benchmarks
 - [ ] Public deployment
@@ -100,6 +110,18 @@ uv sync                 # creates .venv with pinned dependencies (CPU-only PyTor
 cp .env.example .env    # add GOOGLE_API_KEY and GROQ_API_KEY
 ```
 
+Build the index (see below for the source PDFs), then run the interface:
+
+```bash
+uv run python -m citara.ingestion && uv run python -m citara.chunking && uv run python -m citara.indexing
+uv run streamlit run streamlit_app.py
+```
+
+Without an index the app says so and names the build commands; without an API key it still
+answers with cited source passages, and says that no summary is available.
+
+![Desktop layout with the source panel open](assets/screenshots/desktop.png)
+
 Source PDFs go in `docs/` (not redistributed in this repository); their source URLs and download dates are recorded
 in [`docs/SOURCES.md`](docs/SOURCES.md).
 
@@ -114,7 +136,8 @@ src/citara/
   guardrails/   prompt-injection defense, scope control
   generation/   grounded generation, citations, provider failover
   resilience/   quota budgeting, caching, backoff, degraded mode
-  ui/           Streamlit components
+  ui/           Streamlit interface: layout in app.py, rendering rules in presenters.py
+streamlit_app.py  entry point for Streamlit (and Streamlit Community Cloud)
 eval/           gold questions, metrics, ablation runs
 tests/
 scripts/        maintenance scripts

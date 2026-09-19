@@ -12,6 +12,13 @@ wrongly refused and how many unanswerable ones would be wrongly answered. In dis
 response those two errors are not symmetric: answering when the corpus is silent is the
 failure that puts a wrong evacuation route in front of an officer.
 
+The choice is therefore lexicographic, not a weighted trade: first admit no unanswerable
+question, then refuse as few answerable ones as possible. An earlier version weighted a wrong
+answer at three refusals. That agreed with this rule until the ablation changed the ranking,
+after which eight low-scoring answerable questions outweighed one unanswerable question and
+the script recommended a floor of 0.0512 that would have answered it. "Strictly more
+dangerous" (spec, feature 37) is an ordering, and no exchange rate expresses it.
+
 Run:  uv run python scripts/calibrate_floor.py
 """
 
@@ -36,7 +43,13 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     configure_logging("WARNING")
     gold = load_gold_set(settings=settings)
-    retriever = HybridRetriever(settings)
+    # The floor is what is being measured, so it must not filter the evidence being judged.
+    # With the configured floor applied, every question scoring below it came back with no
+    # passages, and "was the right page retrieved?" was answered by the floor itself.
+    unfloored = settings.model_copy(
+        update={"retrieval": settings.retrieval.model_copy(update={"relevance_floor": 0.0})}
+    )
+    retriever = HybridRetriever(unfloored)
 
     answerable: list[tuple[str, float]] = []
     refusable: list[tuple[str, float]] = []
@@ -49,7 +62,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         print(f"scoring {len(gold.questions)} questions through the full funnel...\n")
         for question in gold.questions:
-            # The floor is being measured, so it must not filter the evidence here.
             outcome = retriever.retrieve(question.question, history=question.context or None)
             best = outcome.best_score if outcome.best_score is not None else 0.0
             row = (question.id, float(best))
@@ -97,17 +109,17 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\nthreshold   wrongly refused   wrongly answered   (lower is better for both)")
     best_threshold = None
-    best_cost = None
+    best_key: tuple[int, int] | None = None
     for threshold in midpoints:
         wrongly_refused = sum(1 for s in answerable_scores if s < threshold)
         wrongly_answered = sum(1 for s in refusable_scores if s >= threshold)
-        # Answering when the corpus is silent is the more dangerous error: an officer acting
-        # on an unsupported answer is a casualty event, while a refusal costs a lookup. Ties
-        # break toward the higher - safer - threshold for the same reason.
-        cost = wrongly_refused + 3 * wrongly_answered
+        # Wrong answers first, refusals second: an officer acting on an unsupported answer is
+        # a casualty event, while a refusal costs a lookup. Among equals the lowest threshold
+        # wins, because every threshold here already answers no unanswerable question.
+        key = (wrongly_answered, wrongly_refused)
         marker = ""
-        if best_cost is None or cost <= best_cost:
-            best_cost, best_threshold, marker = cost, threshold, "  <- best so far"
+        if best_key is None or key < best_key:
+            best_key, best_threshold, marker = key, threshold, "  <- best so far"
         print(f"  {threshold:7.4f}   {wrongly_refused:>13}   {wrongly_answered:>16}{marker}")
 
     if best_threshold is not None:

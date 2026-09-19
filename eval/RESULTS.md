@@ -21,29 +21,53 @@ uv run --with onnx python scripts/benchmark_reranker.py    # reranker speed agai
 
 ## Relevance floor
 
-Calibrated rather than chosen, by scoring every gold question through the full funnel and
-comparing the two distributions the floor has to separate.
+Calibrated rather than chosen, by scoring every gold question through the full funnel with the
+floor switched off, and comparing the two distributions it has to separate
+([`runs/floor_calibration.json`](runs/floor_calibration.json)).
 
 | | n | min | median | max |
 |---|---|---|---|---|
-| Answerable | 24 | 0.082 | 0.920 | 0.999 |
-| Unanswerable | 6 | 0.001 | 0.077 | 0.302 |
+| Answerable | 24 | 0.061 | 0.670 | 0.982 |
+| Unanswerable | 6 | 0.001 | 0.033 | 0.291 |
 
-At the calibrated floor of **0.3386**:
+At the calibrated floor of **0.3508**:
 
-- **0** unanswerable questions admitted, including "What is the capital of France?", which
-  BM25 still scores at 14.41. Retrieval returns confident-looking evidence for questions the
-  corpus cannot answer, which is exactly what the floor exists to catch.
-- **0** answerable questions refused whose evidence was actually retrieved.
-- **4** refused where retrieval had already missed the evidence. Answering those would mean
-  answering without support, so refusing them is the correct outcome rather than a cost.
+- **0** of 6 unanswerable questions are answered, including "What is the capital of France?".
+  Retrieval returns confident-looking passages for questions the corpus cannot answer, which
+  is exactly what the floor exists to catch.
+- **16** of 24 answerable questions are answered.
+- **3** are refused although retrieval had found the right page: who can declare an area
+  disaster-hit (c03, 0.184), the number of Sendai targets (i06, 0.288), and damage to the
+  DRR sector (t05, 0.189). These are real losses, and there is no threshold to rescue them
+  with: i06 sits 0.003 below the unanswerable "Does Pakistan operate an earthquake insurance
+  scheme?" (u04, 0.291), so any floor that answers it answers u04 too.
+- **5** are refused where retrieval had already missed the evidence. Answering those would
+  mean answering without support, so refusing them is the correct outcome rather than a cost.
 
-Two details matter and both came from getting them wrong first. Thresholds are tested at
-midpoints between observed scores, because admission uses `>=` and a threshold sitting
-exactly on an observed score admits it - an earlier calibration let through the unanswerable
-question scoring 0.302 for precisely that reason. And ties break toward the higher, safer
-threshold, because the two errors are not symmetric: a refusal costs a lookup, while
-answering without support is the failure this system exists to prevent.
+The two errors are ranked, not traded. The floor is the lowest threshold that answers no
+unanswerable question, because an officer acting on an unsupported answer is a casualty
+event, while a refusal costs a lookup. Thresholds are tested at midpoints between observed
+scores, because admission uses `>=` and a threshold sitting exactly on an observed score
+admits it; an earlier calibration let an unanswerable question through for precisely that
+reason.
+
+### How the calibration was corrected
+
+The floor was first calibrated at 0.3386, before the ablation moved ranking to dense-only.
+Re-running it under the new ranking exposed two defects in the calibration script itself:
+
+- **It judged the evidence with the floor still applied.** Any question scoring below the
+  floor came back with no passages, so "was the right page retrieved?" was answered by the
+  floor. The earlier claim that no question was refused despite having its evidence was an
+  artifact of this. Measured with the floor off, three are.
+- **It traded one wrong answer for three refusals.** Under the new scores, eight
+  low-scoring answerable questions outweighed one unanswerable question, and the script
+  recommended a floor of 0.0512 that would have answered u04. "Strictly more dangerous"
+  is an ordering, and the script now treats it as one.
+
+The corrected floor makes the same decision on every gold question as 0.3386 did under the
+current ranking, because no question scores between the two, so the ablation stands
+unchanged.
 
 Re-run `scripts/calibrate_floor.py` after any change to chunking, retrieval or the reranker.
 The floor is a property of the whole pipeline, not of the model alone.
@@ -107,7 +131,9 @@ cross-encoder. After an explicit warm-up it took 3.9 s.
 ## Honest limits
 
 The gold set holds 24 answerable questions and 6 refusal cases, so one question moves Hit@k
-by 0.042 and a two-question difference is noise. Every question is drafted rather than
+by 0.042 and a two-question difference is noise. Follow-up questions are rewritten by the
+model before retrieval, so their scores vary between runs: the same follow-up scored 0.918
+and 0.766 on one day. Every question is drafted rather than
 independently verified: the quotes were checked against the source PDFs, but whether each
 passage truly answers its question is a human judgement still outstanding. Absolute retrieval
 quality is modest, and the per-category table in [ABLATION.md](ABLATION.md) says where.

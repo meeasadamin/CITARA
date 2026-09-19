@@ -9,6 +9,19 @@ from citara.retrieval.models import RetrievedChunk
 
 AnswerMode = Literal["generated", "refused", "degraded", "out_of_scope", "blocked"]
 
+# Why a turn ended without a generated answer - so the interface can say so specifically,
+# instead of inferring it from message text.
+Reason = Literal[
+    "",
+    "no_evidence",
+    "too_long",
+    "session_cap",
+    "injection",
+    "out_of_scope",
+    "budget_exhausted",
+    "providers_unavailable",
+]
+
 
 @dataclass
 class Citation:
@@ -42,6 +55,7 @@ class GeneratedAnswer:
     cached: bool = False
     screening: str = "none"
     injection_flags: list[str] = field(default_factory=list)
+    reason: Reason = ""
 
     @property
     def refused(self) -> bool:

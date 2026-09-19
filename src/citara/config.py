@@ -240,17 +240,17 @@ class RetrievalSettings(BaseModel):
     reranker_model: str = "BAAI/bge-reranker-base"
     reranker_batch_size: int = Field(default=16, gt=0)
     relevance_floor: float = Field(
-        default=0.3386,
+        default=0.3508,
         description=(
             "Reranker score below which evidence is discarded; if nothing clears it, the "
-            "system refuses (feature 29). CALIBRATED on the gold set rather than chosen: it "
-            "admits none of the unanswerable questions and refuses no question whose evidence "
-            "was actually retrieved. The four questions it does refuse are ones retrieval had "
-            "already missed, where answering would mean answering without support. The value "
-            "is a midpoint between observed scores, not a round number, because admission "
-            "uses >= and a threshold sitting exactly on an observed score admits it. Re-run "
+            "system refuses (feature 29). CALIBRATED on the gold set rather than chosen, by "
+            "ordering the errors: first admit no unanswerable question, then refuse as few "
+            "answerable ones as possible. It answers 16 of 24 answerable questions and none of "
+            "the 6 unanswerable; 3 refusals are real losses (the right page was retrieved but "
+            "scored low). The value is a midpoint between observed scores, not a round number, "
+            "because admission uses >= and a threshold on an observed score admits it. Re-run "
             "scripts/calibrate_floor.py after any change to chunking, retrieval or the "
-            "reranker; see eval/runs/floor_calibration.json."
+            "reranker; see eval/runs/floor_calibration.json and eval/RESULTS.md."
         ),
     )
     use_logit_scores: bool = Field(
@@ -338,7 +338,9 @@ class GuardrailSettings(BaseModel):
         default=True,
         description="A corpus document could contain adversarial text; delimit it as data.",
     )
-    max_query_chars: int = Field(default=1000, gt=0)
+    max_query_chars: int = Field(
+        default=1000, gt=0, description="Enforced in preflight and by the chat input box."
+    )
     log_queries: bool = Field(default=True, description="Non-identifying query logging (46).")
     prototype_disclaimer: str = Field(
         default=(
@@ -393,14 +395,22 @@ class UiSettings(BaseModel):
 
     page_title: str = "CITARA — NDMA Disaster Doctrine Assistant"
     evidence_strength_high: float = Field(
-        default=0.60,
+        default=0.80,
         ge=0.0,
         description=(
-            "Reranker score at or above which evidence reads as High. Derived from real scores, "
-            "never a fabricated percentage (feature 56). Calibrate with the floor in Phase 6."
+            "Reranker score at or above which evidence reads as High (feature 56). Calibrated on "
+            "the gold set: 8 of the 16 admitted answerable questions score 0.80 or more."
         ),
     )
-    evidence_strength_moderate: float = Field(default=0.25, ge=0.0)
+    evidence_strength_moderate: float = Field(
+        default=0.50,
+        ge=0.0,
+        description=(
+            "At or above this, Moderate (6 of the 16 admitted); below it, Low - evidence that "
+            "cleared the relevance floor only narrowly, where the sources deserve a check (the "
+            "other 2). A band, never a percentage."
+        ),
+    )
     show_latency: bool = Field(default=True, description="Per-answer timings (feature 62).")
     max_history_messages: int = Field(default=50, gt=0)
     transcript_prefix: str = Field(default="citara-transcript", description="Export filename (63).")
@@ -493,6 +503,20 @@ class Settings(BaseSettings):
     resilience: ResilienceSettings = ResilienceSettings()
     ui: UiSettings = UiSettings()
     evaluation: EvaluationSettings = EvaluationSettings()
+
+    @model_validator(mode="after")
+    def _bands_sit_above_the_floor(self) -> Settings:
+        """Evidence below the floor is never shown, so a band below it is unreachable.
+
+        The first defaults put Moderate at 0.25 under a floor of 0.3386: every served answer
+        was therefore Moderate or High, and 'Low' could never appear.
+        """
+        if self.ui.evidence_strength_moderate <= self.retrieval.relevance_floor:
+            raise ValueError(
+                "ui.evidence_strength_moderate must exceed retrieval.relevance_floor, "
+                "or the Low evidence band can never be shown"
+            )
+        return self
 
     @property
     def has_primary_provider(self) -> bool:

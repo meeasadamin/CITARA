@@ -49,6 +49,11 @@ _BLOCKED_MESSAGE = (
     "questions from NDMA's published documents and cannot take instructions from a message."
 )
 
+_TOO_LONG_MESSAGE = (
+    "That question is longer than the {limit} characters this assistant accepts. Please "
+    "shorten it to the question itself; the documents are already in the index."
+)
+
 _DEGRADED_NOTICE = (
     "Answer generation is unavailable right now, so the assistant cannot summarise. "
     "The most relevant passages from the indexed NDMA corpus are shown below, with their "
@@ -219,7 +224,7 @@ class Answerer:
 
         early = self.preflight(question)
         if early is None and session_id and not self.sessions.allows(session_id):
-            early = GeneratedAnswer(text=_SESSION_CAP_MESSAGE, mode="refused")
+            early = GeneratedAnswer(text=_SESSION_CAP_MESSAGE, mode="refused", reason="session_cap")
         if early is None:
             # Keyed only once the guardrails have passed: a screened question touches nothing.
             turn.key = self._cache_key(question, history, doc_ids, year)
@@ -367,15 +372,23 @@ class Answerer:
         so the streaming path - the one the interface uses - reached retrieval unscreened and
         was protected only by whatever the relevance floor happened to reject.
         """
+        limit = self.settings.guardrails.max_query_chars
+        if len(question) > limit:
+            # Long pastes are where instructions hide, and they are expensive to embed and
+            # rerank; the interface enforces the same limit before anything is sent.
+            return GeneratedAnswer(
+                text=_TOO_LONG_MESSAGE.format(limit=limit), mode="refused", reason="too_long"
+            )
         screening = screen_input(question)
         if screening.blocked:
             return GeneratedAnswer(
                 text=_BLOCKED_MESSAGE,
                 mode="blocked",
                 screening=",".join(screening.reasons),
+                reason="injection",
             )
         if is_out_of_scope(question):
-            return GeneratedAnswer(text=SCOPE_MESSAGE, mode="out_of_scope")
+            return GeneratedAnswer(text=SCOPE_MESSAGE, mode="out_of_scope", reason="out_of_scope")
         return None
 
     def _record(
@@ -422,6 +435,7 @@ class Answerer:
                 mode="refused",
                 retrieval_ms=outcome.retrieval_ms + outcome.rerank_ms,
                 evidence=[],
+                reason="no_evidence",
             )
 
         citations = build_citations(outcome.results)
@@ -444,6 +458,7 @@ class Answerer:
             if budget.exhausted:
                 answer = self._degrade(answer)
                 answer.error = "daily request budget exhausted"
+                answer.reason = "budget_exhausted"
                 answer.generation_ms = round((time.perf_counter() - started) * 1000, 1)
                 details.update({"mode": answer.mode, "budget_exhausted": True})
                 return answer
@@ -516,6 +531,7 @@ class Answerer:
         ]
         answer.text = f"{_DEGRADED_NOTICE}\n\n" + "\n\n---\n\n".join(blocks)
         answer.mode = "degraded"
+        answer.reason = "providers_unavailable"
         answer.provider = "none"
         for citation in answer.citations:
             citation.used = True
