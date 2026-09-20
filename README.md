@@ -97,7 +97,7 @@ flowchart TD
 - [x] Streamlit interface — page-level citation chips, source panel, evidence band, corpus boundary, refusal and error states, cold-start loading state, transcript export; tested at phone width
 - [x] Ablation study — five configurations from one command ([`eval/ABLATION.md`](eval/ABLATION.md))
 - [ ] Faithfulness and answer-relevance scoring, latency benchmarks
-- [ ] Public deployment
+- [ ] Public deployment — index published as a release asset and fetched on first start
 
 ## Getting started
 
@@ -110,15 +110,22 @@ uv sync                 # creates .venv with pinned dependencies (CPU-only PyTor
 cp .env.example .env    # add GOOGLE_API_KEY and GROQ_API_KEY
 ```
 
-Build the index (see below for the source PDFs), then run the interface:
+Then run the interface:
 
 ```bash
-uv run python -m citara.ingestion && uv run python -m citara.chunking && uv run python -m citara.indexing
 uv run streamlit run streamlit_app.py
 ```
 
-Without an index the app says so and names the build commands; without an API key it still
-answers with cited source passages, and says that no summary is available.
+With no local index, the app downloads the published one (26 MB) on first start and checks it
+against a pinned checksum, so a clone runs without the source PDFs. To build your own instead,
+put the PDFs in `docs/` and run:
+
+```bash
+uv run python -m citara.ingestion && uv run python -m citara.chunking && uv run python -m citara.indexing
+```
+
+Without an API key the app still answers with cited source passages, and says that no summary
+is available.
 
 ![Desktop layout with the source panel open](assets/screenshots/desktop.png)
 
@@ -145,8 +152,22 @@ scripts/        maintenance scripts
 
 ## Deployment
 
-Targets Streamlit Community Cloud. `requirements.txt` is exported from `uv.lock` with CPU-only PyTorch pinned by wheel
-URL; regenerate it after any dependency change:
+Runs on Streamlit Community Cloud: main file `streamlit_app.py`, **Python 3.12** (the pinned
+PyTorch wheel is 3.12-only), and `GOOGLE_API_KEY` / `GROQ_API_KEY` in the app's Secrets.
+
+The repository ships no index and no PDFs, so the built index is published as a release asset
+and fetched on first start, verified against the checksum pinned in `citara/config.py`. After
+rebuilding the index:
+
+```bash
+uv run python scripts/package_index.py     # writes dist/citara-index.tar.gz, prints its sha256
+```
+
+Upload that archive to the release, update `index_sha256`, and reboot the app. A mismatched or
+truncated archive is refused rather than searched.
+
+`requirements.txt` is exported from `uv.lock` with CPU-only PyTorch pinned by wheel URL;
+regenerate it after any dependency change:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/export_requirements.ps1

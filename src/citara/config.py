@@ -471,6 +471,25 @@ class Settings(BaseSettings):
         default=False, description="JSON lines for machine parsing; plain text for humans."
     )
 
+    index_url: str | None = Field(
+        default=(
+            "https://github.com/meeasadamin/CITARA/releases/download/index-v1/citara-index.tar.gz"
+        ),
+        description=(
+            "The published index, fetched on first start when the data directory has none "
+            "(the repository ships no index and no PDFs to rebuild one from). Set to an "
+            "empty value to disable fetching and rely on a locally built index."
+        ),
+    )
+    index_sha256: str | None = Field(
+        default="a66ff311b59d1189c389f4893766ff462932cf478ad401038613aa85a793c1db",
+        description=(
+            "Checksum the downloaded archive must match. Without it a corrupted or "
+            "substituted asset would be indexed and answered from. Printed by "
+            "scripts/package_index.py; update both together."
+        ),
+    )
+
     google_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("GOOGLE_API_KEY", "CITARA_GOOGLE_API_KEY"),
@@ -479,6 +498,14 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("GROQ_API_KEY", "CITARA_GROQ_API_KEY"),
     )
+
+    @field_validator("index_url", "index_sha256", mode="before")
+    @classmethod
+    def _blank_is_absent(cls, value: object) -> object:
+        """An empty override means "do not fetch", not an empty URL to request."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("google_api_key", "groq_api_key", mode="before")
     @classmethod

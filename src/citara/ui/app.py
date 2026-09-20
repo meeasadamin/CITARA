@@ -21,6 +21,7 @@ import streamlit as st
 
 from citara.config import Settings, get_settings
 from citara.generation.models import GeneratedAnswer
+from citara.indexing import fetch
 from citara.log import configure_logging, get_logger
 from citara.ui import health, logo, presenters
 from citara.ui.corpus import Corpus, load_corpus
@@ -65,6 +66,11 @@ _LOADING = (
     "question after it is answered in seconds."
 )
 
+_FETCHING = (
+    "This deployment starts without the document index, so it is being downloaded once. "
+    "About 26 MB; it stays until the app is rebooted."
+)
+
 _ANSWER_FAILED = (
     "Something went wrong while answering, and the error has been logged. Please try again; "
     "if it persists, rephrase the question or narrow it with the document filter."
@@ -85,6 +91,12 @@ def load_answerer() -> Answerer:
     answerer = Answerer()
     answerer.warm_up()
     return answerer
+
+
+@st.cache_resource(show_spinner=False)
+def fetch_index(_settings: Settings, on_progress: object = None) -> bool:
+    """Download the published index once per process, if this deployment has none."""
+    return fetch.ensure_index(_settings, on_progress if callable(on_progress) else None)
 
 
 @st.cache_resource(show_spinner=False)
@@ -110,6 +122,9 @@ def main() -> None:
     )
     st.markdown(CSS, unsafe_allow_html=True)
     _header(settings)
+
+    if not _bootstrap_index(settings):
+        st.stop()
 
     problems = check_health(settings)
     for problem in problems:
@@ -193,6 +208,41 @@ def _show_problem(problem: health.Problem) -> None:
         st.error(body, icon=":material/error:")
     else:
         st.warning(body, icon=":material/warning:")
+
+
+def _bootstrap_index(settings: Settings) -> bool:
+    """Fetch the published index before anything decides it is missing (feature 65).
+
+    False means the app cannot continue: the download failed and the reason is on screen.
+    """
+    if fetch.index_present(settings) or not settings.index_url:
+        return True
+
+    with st.status("Fetching the document index", expanded=True) as status:
+        st.write(_FETCHING)
+        progress = st.empty()
+
+        def report(received: int, total: int) -> None:
+            megabytes = received / 1_048_576
+            if total:
+                progress.markdown(
+                    f'<div class="citara-searching">{megabytes:.0f} MB of '
+                    f"{total / 1_048_576:.0f} MB</div>",
+                    unsafe_allow_html=True,
+                )
+
+        try:
+            fetch_index(settings, report)
+        except fetch.IndexFetchError as error:
+            log.exception("index fetch failed")
+            status.update(label="Index download failed", state="error", expanded=True)
+            st.error(
+                f"**The document index could not be downloaded.** {error}", icon=":material/error:"
+            )
+            return False
+        progress.empty()
+        status.update(label="Index ready", state="complete", expanded=False)
+    return True
 
 
 def _start() -> Answerer | None:

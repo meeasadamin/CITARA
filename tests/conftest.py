@@ -27,7 +27,7 @@ def isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     Tests must not depend on whatever the developer happens to have exported: a real
     GOOGLE_API_KEY in the shell would change provider-availability assertions. They must also
     never touch the working cache, usage counter or query log, which are real state the
-    project depends on between runs.
+    project depends on between runs, and never fetch the published index over the network.
     """
     for name in _PROVIDER_VARS:
         monkeypatch.delenv(name, raising=False)
@@ -35,8 +35,11 @@ def isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
         if name.startswith("CITARA_"):
             monkeypatch.delenv(name, raising=False)
 
-    # Set last: the loop above would otherwise remove it.
+    # Set last: the loop above would otherwise remove them.
     monkeypatch.setenv("CITARA_PATHS__DATA_DIR", str(tmp_path / "data"))
+    # No index source: a test with an empty data directory must never reach for the published
+    # archive. Tests that exercise fetching pass their own URL explicitly.
+    monkeypatch.setenv("CITARA_INDEX_URL", "")
 
     # Quota cooldowns are process-wide by design; one test's spent quota is not another's.
     COOLDOWNS.clear()
