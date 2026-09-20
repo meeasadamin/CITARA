@@ -14,6 +14,7 @@ from __future__ import annotations
 import html
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import streamlit as st
@@ -21,7 +22,7 @@ import streamlit as st
 from citara.config import Settings, get_settings
 from citara.generation.models import GeneratedAnswer
 from citara.log import configure_logging, get_logger
-from citara.ui import health, presenters
+from citara.ui import health, logo, presenters
 from citara.ui.corpus import Corpus, load_corpus
 from citara.ui.styles import CSS
 
@@ -30,8 +31,18 @@ if TYPE_CHECKING:
 
 log = get_logger("ui")
 
-USER_AVATAR = ":material/person:"
-ASSISTANT_AVATAR = ":material/menu_book:"
+SUBTITLE = "Citation-grounded answers from NDMA's published disaster-management documents"
+ANY_YEAR = "Any year"
+FAVICON = Path(__file__).resolve().parents[3] / "assets" / "favicon.png"
+
+# What each kind of turn is called above its rule.
+_NOTICE_LABEL = {
+    "refusal": "Refused",
+    "degraded": "Degraded",
+    "blocked": "Declined",
+    "scope": "Out of scope",
+    "limit": "Limit reached",
+}
 
 # Curated for a ninety-second demo (feature 58) and chosen by running candidates live, not by
 # guessing: each of the first three returned High evidence and cited answers on 2026-09-20.
@@ -93,7 +104,7 @@ def main() -> None:
     configure_logging(settings.log_level)
     st.set_page_config(
         page_title=settings.ui.page_title,
-        page_icon=ASSISTANT_AVATAR,
+        page_icon=str(FAVICON) if FAVICON.is_file() else ":material/menu_book:",
         layout="centered",
         initial_sidebar_state="auto",
     )
@@ -126,7 +137,7 @@ def main() -> None:
     if not state.turns and pending is None:
         _empty_state()
 
-    scope = _scope_text(corpus, list(state.get("doc_filter") or []), state.get("year_filter"))
+    scope = _scope_text(corpus, list(state.get("doc_filter") or []), _selected_year(state))
     if scope:
         st.markdown(
             f'<div class="citara-scope">Searching only: {html.escape(scope)}</div>',
@@ -151,11 +162,26 @@ def main() -> None:
 def _header(settings: Settings) -> None:
     """Brand bar and the prototype disclaimer, visible on every screen size (feature 47)."""
     st.markdown(
-        '<div class="citara-header"><div class="citara-title">CITARA</div>'
-        '<div class="citara-subtitle">Citation-grounded answers from NDMA\'s published '
-        "disaster-management documents</div></div>"
+        f'<div class="citara-header">{logo.lockup(SUBTITLE)}</div>'
         f'<div class="citara-disclaimer">{html.escape(settings.guardrails.prototype_disclaimer)}'
         "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _label(text: str, first: bool = False, count: str = "") -> None:
+    """A small-caps section label over a hairline rule."""
+    suffix = f'<span class="count">{html.escape(count)}</span>' if count else ""
+    st.markdown(
+        f'<span class="section-label{" first" if first else ""}">{html.escape(text)}{suffix}'
+        "</span>",
+        unsafe_allow_html=True,
+    )
+
+
+def _question(text: str) -> None:
+    st.markdown(
+        f'<div class="citara-question">{presenters.safe_markdown(text)}</div>',
         unsafe_allow_html=True,
     )
 
@@ -222,6 +248,12 @@ def _empty_state() -> None:
         )
 
 
+def _selected_year(state: object) -> int | None:
+    """The year filter as a number, or None while it reads 'Any year'."""
+    value = st.session_state.get("year_filter")
+    return int(value) if isinstance(value, str) and value.isdigit() else None
+
+
 def _scope_text(corpus: Corpus, doc_ids: list[str], year: int | None) -> str:
     parts = []
     if doc_ids:
@@ -239,14 +271,15 @@ def _ask(question: str, answerer: Answerer, settings: Settings, scope: str) -> N
     """Stream an answer, then replace the stream with the finished, validated answer."""
     state = st.session_state
     doc_ids = list(state.get("doc_filter") or []) or None
-    year = state.get("year_filter")
+    year = _selected_year(state)
     history = [turn.question for turn in state.turns]
 
-    with st.chat_message("user", avatar=USER_AVATAR):
-        st.markdown(presenters.safe_markdown(question))
+    with st.chat_message("user"):
+        _label("Question", first=True)
+        _question(question)
 
     final: GeneratedAnswer | None = None
-    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+    with st.chat_message("assistant"):
         live = st.empty()
         # Retrieval and reranking take seconds before the first word can stream, and an empty
         # answer area for that long reads as a crash (feature 41). Replaced by the first piece.
@@ -286,15 +319,17 @@ def _ask(question: str, answerer: Answerer, settings: Settings, scope: str) -> N
 
 
 def _render_turn(turn: presenters.Turn, settings: Settings) -> None:
-    with st.chat_message("user", avatar=USER_AVATAR):
-        st.markdown(presenters.safe_markdown(turn.question))
-    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+    with st.chat_message("user"):
+        _label("Question", first=True)
+        _question(turn.question)
+    with st.chat_message("assistant"):
         _render_answer(turn.answer, settings)
 
 
 def _render_answer(answer: GeneratedAnswer, settings: Settings) -> None:
     heading = presenters.notice(answer)
     if heading is not None:
+        _label(_NOTICE_LABEL[heading.kind])
         # A degraded answer's text is the notice followed by the passages, which the source
         # panel below shows properly; only the explanation belongs in the box.
         body = answer.text.split("\n\n", 1)[0] if answer.mode == "degraded" else answer.text
@@ -304,13 +339,15 @@ def _render_answer(answer: GeneratedAnswer, settings: Settings) -> None:
             unsafe_allow_html=True,
         )
     if answer.mode == "generated":
+        _label("Answer")
         st.markdown(presenters.render_answer_html(answer), unsafe_allow_html=True)
 
+    _label("Evidence")
     meta = []
     band = presenters.evidence_band(answer, settings.ui)
     if band is not None:
         explanation = html.escape(presenters.BAND_EXPLANATION[band])
-        meta.append(f'<span class="band band-{band}" title="{explanation}">Evidence: {band}</span>')
+        meta.append(f'<span class="band band-{band}" title="{explanation}">{band}</span>')
         if band == "Low":
             meta.append(f"<span>{explanation}</span>")
     if settings.ui.show_latency:
@@ -322,10 +359,11 @@ def _render_answer(answer: GeneratedAnswer, settings: Settings) -> None:
         return
     if answer.mode == "generated":
         cited = sum(row.cited for row in rows)
-        label = f"Sources · {cited} cited of {len(rows)} retrieved"
+        count = f"{cited} cited of {len(rows)} retrieved"
     else:
-        label = f"Source passages · {len(rows)}"
-    with st.expander(label, expanded=answer.mode == "degraded"):
+        count = f"{len(rows)} retrieved"
+    _label("Sources", count=count)
+    with st.expander("Show the passages", expanded=answer.mode == "degraded"):
         for row in rows:
             score = f"relevance {row.score:.2f}" if row.score is not None else ""
             status = ""
@@ -348,7 +386,7 @@ def _sidebar(
 ) -> None:
     state = st.session_state
     with st.sidebar:
-        st.markdown("#### Search within")
+        _label("Search within", first=True)
         labels = {d.doc_id: d.label for d in corpus.searchable}
         st.multiselect(
             "Documents",
@@ -357,14 +395,15 @@ def _sidebar(
             key="doc_filter",
             placeholder="All documents",
         )
+        # "Any year" as a real option rather than None: Streamlit reads a None option as
+        # nothing selected and shows its own "Choose an option" placeholder instead.
         st.selectbox(
             "Year of publication",
-            options=[None, *corpus.years],
-            format_func=lambda year: "Any year" if year is None else str(year),
+            options=[ANY_YEAR, *(str(year) for year in corpus.years)],
             key="year_filter",
         )
 
-        st.markdown("#### This session")
+        _label("This session")
         cap = answerer.sessions.cap
         st.caption(f"{answerer.sessions.remaining(state.session_id)} of {cap} questions left")
         budget = answerer.budget.state()
@@ -388,7 +427,7 @@ def _sidebar(
         )
         st.button("Clear conversation", on_click=_clear, disabled=not state.turns, width="stretch")
 
-        st.markdown("#### Knowledge boundary")
+        _label("Knowledge boundary")
         st.caption(
             f"{len(corpus.searchable)} documents · {corpus.searchable_pages:,} of "
             f"{corpus.total_pages:,} pages searchable. Answers come only from these."

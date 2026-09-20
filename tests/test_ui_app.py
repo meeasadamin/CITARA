@@ -159,7 +159,9 @@ def test_a_starter_is_answered_with_citation_chips(app: AppTest, fake: FakeAnswe
     rendered = all_markdown(app)
     assert 'class="cite-chip"' in rendered
     assert "1 · p. 47" in rendered
-    assert "Evidence: High" in rendered
+    assert '<span class="section-label">Answer</span>' in rendered
+    assert '<span class="section-label first">Question</span>' in rendered
+    assert '<span class="band band-High"' in rendered
     assert "Retrieval 3.4 s" in rendered
     # Once asked, the starters give way to the conversation.
     assert STARTERS[1] not in [b.label for b in app.button]
@@ -201,7 +203,7 @@ def test_the_conversation_persists_and_feeds_follow_ups(app: AppTest, fake: Fake
 def test_filters_reach_retrieval_and_are_visible(app: AppTest, fake: FakeAnswerer) -> None:
     app.run()
     app.sidebar.multiselect[0].set_value(["ndrp"])
-    app.sidebar.selectbox[0].set_value(2019)
+    app.sidebar.selectbox[0].set_value("2019")
     app.run()
     ask(app, "What should people do?")
 

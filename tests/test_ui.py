@@ -388,3 +388,54 @@ def test_a_full_stop_stays_with_its_chip() -> None:
     assert '<span class="cite-tail"><span class="cite-chip"' in rendered
     assert "</span>.</span>" in rendered
     assert rendered.endswith("1 · p. 47</span>")  # no punctuation, no wrapper
+
+
+# --- figures and the mark (feature 60) -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Damage reached PKR 800 billion [1].",
+        "The floods killed 35,000 people [1].",
+        "Poverty rose by 9.7% [1].",
+        "Rs 14,000 per acre was paid [1].",
+        "The alert triggers at 45.5 °C [1].",
+    ],
+)
+def test_figures_are_marked_for_the_reader(text: str) -> None:
+    """The number is what an officer came for, and what they will check against the page."""
+    assert '<span class="figure">' in presenters.render_answer_html(generated(text))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Page 3 of 5 covers this [1].",
+        "There are 4 districts involved [1].",
+        "See section 2 [1].",
+    ],
+)
+def test_small_bare_numbers_are_left_alone(text: str) -> None:
+    """Marking every digit would be noise, and a highlight that means everything means nothing."""
+    assert "figure" not in presenters.render_answer_html(generated(text))
+
+
+def test_a_citation_marker_is_never_read_as_a_figure() -> None:
+    answer = generated("Damages were 35,000 [1].", scores=(0.9,))
+    answer.citations[0].page_start = 1000
+    answer.citations[0].page_end = 1200
+    rendered = presenters.render_answer_html(answer)
+    assert '<span class="figure">35,000</span>' in rendered
+    assert 'title="NDRP 2019, p. 47">1 · pp. 1000-1200</span>' in rendered
+    assert '<span class="figure">1,000' not in rendered  # the page number stays in its chip
+
+
+def test_the_mark_is_inline_svg_that_takes_the_colour_around_it() -> None:
+    from citara.ui import logo
+
+    lockup = logo.lockup("NDMA doctrine assistant")
+    assert "<svg" in lockup and 'stroke="currentColor"' in lockup
+    assert "CITARA" in lockup
+    assert "NDMA doctrine assistant" in lockup
+    assert 'width="16"' in logo.mark(size=16)

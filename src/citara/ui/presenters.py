@@ -29,6 +29,21 @@ _MARKER = re.compile(r"\[(\d+)\]")
 _MARKER_WITH_PUNCTUATION = re.compile(r"\[(\d+)\]([.,;:!?]?)")
 _MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 
+# Figures an officer would check against the cited page: money, large counts, scaled amounts,
+# percentages and temperatures. Bare small numbers are left alone - marking every "3" would
+# be noise, and a highlight that means everything means nothing.
+_FIGURE = re.compile(
+    r"(?:PKR|Rs\.?|USD|US\$|\$)\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:million|billion|trillion))?"
+    r"|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b"
+    r"|\b\d+(?:\.\d+)?\s?(?:million|billion|trillion)\b"
+    r"|\b\d+(?:\.\d+)?\s?(?:%|per ?cent)"
+    r"|\b\d+(?:\.\d+)?\s?(?:\u00b0\s?C|\u2103)",
+    re.IGNORECASE,
+)
+# Chips are set aside while figures are marked, so the digits inside a citation are never
+# mistaken for a figure. The token carries a letter prefix so no word boundary precedes it.
+_STASHED = re.compile(r"\x00chip(\d+)\x00")
+
 Band = Literal["High", "Moderate", "Low"]
 NoticeKind = Literal["refusal", "degraded", "blocked", "scope", "limit"]
 
@@ -55,7 +70,8 @@ def render_answer_html(answer: GeneratedAnswer) -> str:
     The chip carries the marker and the page, so the source is legible inline on a phone,
     where there is no hover; the full title is in the tooltip and in the source panel. A
     marker pointing at evidence that does not exist is drawn as a warning rather than
-    silently dropped.
+    silently dropped. Figures are marked in the same pass (feature 60): the number is usually
+    what the reader came for, and what they will verify against the page.
     """
     by_marker = {citation.marker: citation for citation in answer.citations}
 
@@ -74,7 +90,15 @@ def render_answer_html(answer: GeneratedAnswer) -> str:
             return f'<span class="cite-tail">{drawn}{punctuation}</span>'
         return drawn
 
-    return _MARKER_WITH_PUNCTUATION.sub(chip, safe_markdown(answer.text))
+    stashed: list[str] = []
+
+    def stash(match: re.Match[str]) -> str:
+        stashed.append(chip(match))
+        return f"\x00chip{len(stashed) - 1}\x00"
+
+    text = _MARKER_WITH_PUNCTUATION.sub(stash, safe_markdown(answer.text))
+    text = _FIGURE.sub(lambda m: f'<span class="figure">{m.group(0)}</span>', text)
+    return _STASHED.sub(lambda m: stashed[int(m.group(1))], text)
 
 
 def evidence_band(answer: GeneratedAnswer, ui: UiSettings) -> Band | None:
