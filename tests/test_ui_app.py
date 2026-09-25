@@ -110,8 +110,12 @@ def app(fake: FakeAnswerer, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     return AppTest.from_file(APP, default_timeout=60)
 
 
+def markdown_blocks(at: AppTest) -> list[str]:
+    return [str(element.value) for element in at.markdown]
+
+
 def all_markdown(at: AppTest) -> str:
-    return "\n".join(str(element.value) for element in at.markdown)
+    return "\n".join(markdown_blocks(at))
 
 
 def ask(at: AppTest, question: str) -> AppTest:
@@ -173,7 +177,10 @@ def test_the_refusal_is_stated_plainly(app: AppTest) -> None:
     rendered = all_markdown(app)
     assert "No supporting evidence in the indexed documents" in rendered
     assert "no model called" in rendered
-    assert "cite-chip" not in rendered.split("citara-notice")[1]
+    # The turn itself, not the whole page: the stylesheet names these classes too.
+    turn = next(block for block in markdown_blocks(app) if "<article" in block)
+    assert 'class="citara-notice' in turn
+    assert "cite-chip" not in turn
 
 
 def test_the_final_answer_replaces_what_was_streamed(app: AppTest, fake: FakeAnswerer) -> None:

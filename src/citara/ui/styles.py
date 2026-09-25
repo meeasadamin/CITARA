@@ -33,16 +33,35 @@ MUTED = "#55605F"
 RED = "#8F1D21"
 RED_TINT = "#FBEDED"
 
-# The centred layout left half the screen empty on a laptop; the page is wide now, with the
-# column capped where a line of text stops being comfortable to read.
-CONTENT_WIDTH = "1080px"
+# The page fills the window rather than floating in the middle of it. Only the measure of
+# running text is capped, at the width where a line stops being comfortable to read, and the
+# panels around it - brand bar, rules, source list - span the full column.
+CONTENT_WIDTH = "1680px"
+READING_WIDTH = "98ch"
+SIDEBAR_WIDTH = "312px"
 
 CSS = f"""
 <style>
 [data-testid="stMainBlockContainer"] {{
-  padding-top: 2.2rem; padding-bottom: 4rem;
-  max-width: {CONTENT_WIDTH}; margin: 0 auto;
+  padding: 0.9rem 2.5rem 1.2rem; max-width: {CONTENT_WIDTH}; margin: 0 auto;
 }}
+/* Streamlit reserves a 60px strip for its toolbar even when the toolbar is empty, and
+   holds it there with a min-height that a height alone does not beat. Shortened, so the
+   brand bar starts at the top of the page rather than a thumb's width below it. */
+[data-testid="stHeader"] {{
+  height: 2.2rem; min-height: 2.2rem; background: transparent;
+}}
+/* The composer lives in Streamlit's own bottom container, which indents itself 80px on
+   each side and leaves 56px of nothing underneath: the box floats narrower than the column
+   it belongs to, above a band of empty page. Padded to match the column instead, so the
+   two line up and the opening view fits a 768px-tall laptop without scrolling - which is
+   what keeps the brand bar on screen, since Streamlit scrolls a taller page to its end. */
+[data-testid="stBottomBlockContainer"] {{
+  padding: 0.55rem 2.5rem 1rem; max-width: {CONTENT_WIDTH}; margin: 0 auto;
+}}
+/* Streamlit spaces every element 1rem apart; over a dozen stacked rows that is a screenful. */
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {{ gap: 0.75rem; }}
+.answer-body, .citara-intro, .citara-notice p {{ max-width: {READING_WIDTH}; }}
 html, body, [data-testid="stAppViewContainer"] {{ color: {INK}; }}
 
 /* Leftovers from the previous run fade out entirely rather than sitting at a third opacity
@@ -66,7 +85,7 @@ html, body, [data-testid="stAppViewContainer"] {{ color: {INK}; }}
 .citara-header {{
   display: flex; align-items: center; gap: 14px;
   background: linear-gradient(135deg, {TEAL} 0%, {TEAL_DEEP} 100%);
-  color: #FFFFFF; padding: 18px 22px 17px; border-radius: 4px;
+  color: #FFFFFF; padding: 15px 22px 14px; border-radius: 4px;
 }}
 .brand-mark {{ display: flex; }}
 .brand-text {{ display: flex; flex-direction: column; }}
@@ -78,9 +97,9 @@ html, body, [data-testid="stAppViewContainer"] {{ color: {INK}; }}
 .brand-sub {{ font-size: 0.88rem; opacity: 0.92; margin: 4px 0 0; }}
 .citara-disclaimer {{
   font-size: 0.78rem; color: {MUTED}; background: {PALE};
-  border-left: 3px solid {COPPER}; padding: 8px 12px; margin: 10px 0 18px;
+  border-left: 3px solid {COPPER}; padding: 7px 12px; margin: 8px 0 12px;
 }}
-.citara-intro {{ font-size: 0.98rem; color: {INK}; margin: 2px 0 14px; }}
+.citara-intro {{ font-size: 0.98rem; color: {INK}; margin: 2px 0 8px; }}
 .citara-scope {{ font-size: 0.82rem; color: {MUTED}; margin: 0 0 8px; }}
 .citara-searching {{ font-size: 0.95rem; color: {MUTED}; font-style: italic; }}
 
@@ -196,19 +215,30 @@ mark.figure {{
 .citara-footer a {{ color: {TEAL_MID}; }}
 
 /* -- sidebar ----------------------------------------------------------------------------- */
+/* Held at one width rather than Streamlit's resizable default, so the mark and the
+   headings below it have a column to sit in. */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] > div {{ width: {SIDEBAR_WIDTH} !important; }}
 [data-testid="stSidebar"] {{ background: {PALE}; border-right: 1px solid {BORDER}; }}
 .sidebar-brand {{
-  display: flex; align-items: center; gap: 10px; padding: 2px 0 10px;
-  border-bottom: 2px solid {BORDER}; margin-bottom: 4px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 6px 0 16px; border-bottom: 2px solid {TEAL}; margin-bottom: 6px; text-align: center;
 }}
 .sidebar-brand-name {{
-  font-size: 1.12rem; font-weight: 700; letter-spacing: 0.16em; color: {TEAL};
+  font-size: 1.6rem; font-weight: 700; letter-spacing: 0.26em; color: {TEAL};
+  text-indent: 0.26em;
 }}
 [data-testid="stSidebar"] .section-label {{
-  font-size: 0.92rem; letter-spacing: 0.1em; color: {TEAL}; border-bottom-color: {TEAL_MID};
-  margin: 24px 0 10px;
+  font-size: 1.02rem; letter-spacing: 0.1em; color: {TEAL}; border-bottom-color: {TEAL_MID};
+  margin: 26px 0 12px; padding-bottom: 6px;
 }}
-[data-testid="stSidebar"] label {{ font-size: 0.88rem; }}
+[data-testid="stSidebar"] label {{ font-size: 0.92rem; }}
+/* Streamlit dims captions with opacity as well as colour, which composites to #99A09F on
+   white - 2.66:1, which axe-core reports and AA does not allow. The palette's muted ink
+   says the same thing at full strength and 6.5:1. */
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {{ color: {MUTED}; opacity: 1; }}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {{ font-size: 0.86rem; }}
 .corpus-summary {{
   cursor: pointer; font-size: 0.84rem; font-weight: 600; color: {TEAL_MID};
   padding: 7px 10px; border: 1px solid {BORDER}; border-radius: 4px; background: #FFFFFF;
@@ -227,6 +257,7 @@ mark.figure {{
 /* Starter questions read as a list, so they align left; sidebar buttons stay centred. */
 [data-testid="stMainBlockContainer"] .stButton button {{
   justify-content: flex-start; text-align: left; white-space: normal;
+  min-height: 0; padding-top: 0.42rem; padding-bottom: 0.42rem;
 }}
 [data-testid="stMainBlockContainer"] .stButton button > div {{
   justify-content: flex-start; width: 100%;
@@ -234,11 +265,15 @@ mark.figure {{
 [data-testid="stMainBlockContainer"] .stButton button p {{ text-align: left; }}
 
 @media (max-width: 640px) {{
-  /* The top bar holding the sidebar toggle overlays the page on a phone; less clearance
-     than this hid the brand bar and its title underneath it. */
+  /* The top bar holding the sidebar toggle overlays the page on a phone, so the brand bar
+     keeps clear of it - but only just, now that the bar itself is 2.2rem rather than 60px. */
   [data-testid="stMainBlockContainer"] {{
-    padding-left: 0.8rem; padding-right: 0.8rem; padding-top: 3.8rem;
+    padding-left: 0.8rem; padding-right: 0.8rem; padding-top: 1.4rem;
   }}
+  [data-testid="stBottomBlockContainer"] {{
+    padding-left: 0.8rem; padding-right: 0.8rem;
+  }}
+  .sidebar-brand-name {{ font-size: 1.35rem; }}
   .citara-header {{ padding: 13px 14px 12px; gap: 10px; }}
   [data-testid="stMarkdownContainer"] .citara-header .brand-name,
   .citara-header .brand-name {{ font-size: 1.16rem; letter-spacing: 0.15em; }}

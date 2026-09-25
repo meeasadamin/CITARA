@@ -58,6 +58,30 @@ _LANDMARKS = """<script>
     if (sidebar && !sidebar.getAttribute('aria-label')) {
       sidebar.setAttribute('aria-label', 'Filters, session and corpus');
     }
+    pinTop();
+  };
+  // Streamlit scrolls a page that overflows to its end, which opens the app below its own
+  // masthead. The opening view has nothing below to scroll to, so it is held at the top -
+  // watched rather than retried, because the page can take half a minute to appear while the
+  // models load, by which time any list of timeouts has run out. The pinning ends for good at
+  // the first answer, which the reader is meant to be taken to, or the moment the reader
+  // scrolls the page themselves.
+  const pinTop = () => {
+    const main = doc.querySelector('section.stMain, [data-testid="stMain"]');
+    if (!main || win.__citaraFreeScroll) return;
+    if (doc.querySelector('article.turn')) {
+      win.__citaraFreeScroll = true;
+      return;
+    }
+    main.scrollTop = 0;
+    if (!main.dataset.citaraPinned) {
+      main.dataset.citaraPinned = '1';
+      ['wheel', 'touchstart', 'keydown'].forEach((event) => {
+        main.addEventListener(event, () => { win.__citaraFreeScroll = true; },
+                              { passive: true, once: true });
+      });
+      new win.MutationObserver(pinTop).observe(main, { childList: true, subtree: true });
+    }
   };
   // Retried rather than observed: this component is torn down and rebuilt on every rerun,
   // which takes any MutationObserver with it, and the main container is not always in the
@@ -457,7 +481,7 @@ def _sidebar(
 ) -> None:
     state = st.session_state
     with st.sidebar:
-        st.markdown(logo.wordmark(), unsafe_allow_html=True)
+        st.markdown(logo.wordmark(size=64), unsafe_allow_html=True)
         _label("Search within")
         labels = {d.doc_id: d.label for d in corpus.searchable}
         st.multiselect(
