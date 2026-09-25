@@ -159,7 +159,7 @@ def test_a_starter_is_answered_with_citation_chips(app: AppTest, fake: FakeAnswe
     rendered = all_markdown(app)
     assert 'class="cite-chip"' in rendered
     assert "1 · p. 47" in rendered
-    assert '<h3 class="section-label" id="a-1">Answer</h3>' in rendered
+    assert '<h3 class="section-label label-answer" id="a-1">Answer</h3>' in rendered
     assert '<h2 class="question" id="q-1">' in rendered
     assert '<article class="turn" aria-labelledby="q-1">' in rendered
     assert '<span class="band band-High"' in rendered
@@ -276,3 +276,33 @@ def test_a_missing_key_is_a_warning_and_the_app_still_runs(
 
     assert any("No language-model key" in w.value for w in app.warning)
     assert app.chat_input  # degraded mode still serves cited sources
+
+
+def test_the_picker_offers_questions_this_corpus_answers(app: AppTest) -> None:
+    """Streamlit's chat box cannot suggest while typing; the picker filters as you type."""
+    from citara.ui.app import SUGGESTIONS
+
+    app.run()
+    picker = app.selectbox[0]
+    assert picker.options[: len(SUGGESTIONS)] == list(SUGGESTIONS)
+    for starter in STARTERS:
+        assert starter in picker.options
+
+
+def test_picking_a_question_asks_it(app: AppTest, fake: FakeAnswerer) -> None:
+    app.run()
+    app.selectbox[0].set_value(STARTERS[2]).run()
+
+    assert fake.calls[-1]["question"] == STARTERS[2]
+    assert "cite-chip" in all_markdown(app)
+    # Cleared afterwards, so the same question can be picked again.
+    assert app.session_state["picker"] is None
+
+
+def test_questions_already_asked_join_the_picker(app: AppTest) -> None:
+    app.run()
+    ask(app, "What were the flood damages in Sindh?")
+    # The picker is built before the turn is appended, so it gains the question on the next
+    # run - which is the next thing the visitor does anyway.
+    app.run()
+    assert "What were the flood damages in Sindh?" in app.selectbox[0].options

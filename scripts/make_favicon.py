@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from citara.ui.styles import NAVY
+from citara.ui.styles import TEAL
 
 SIZE = 256
 SCALE = SIZE / 32  # the SVG is drawn on a 32x32 grid
@@ -24,16 +24,24 @@ def main() -> int:
     image = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
 
-    # The arc: centre (16,16), radius 11, open between 41 and -41 degrees on the right.
-    radius = 11 * SCALE
-    centre = 16 * SCALE
-    box = (centre - radius, centre - radius, centre + radius, centre + radius)
-    draw.arc(box, start=41, end=319, fill=NAVY, width=round(3.1 * SCALE))
+    def at(*points: tuple[float, float]) -> list[tuple[float, float]]:
+        return [(x * SCALE, y * SCALE) for x, y in points]
 
-    # The folded corner, top right.
-    draw.polygon(
-        [(20.6 * SCALE, 3.4 * SCALE), (28.6 * SCALE, 3.4 * SCALE), (28.6 * SCALE, 11.4 * SCALE)],
-        fill=NAVY,
+    # The tile, with its top-right corner cut away like a turned page.
+    draw.rounded_rectangle(
+        (1 * SCALE, 1 * SCALE, 31 * SCALE, 31 * SCALE), radius=6 * SCALE, fill=TEAL
+    )
+    draw.polygon(at((21, 1), (31, 1), (31, 11)), fill=(0, 0, 0, 0))
+    draw.polygon(at((21, 1), (31, 11), (21, 11)), fill=(255, 255, 255, 82))
+
+    # The C: centre (16,18), radius 6.5, open between 45 and -45 degrees on the right.
+    radius, cx, cy = 6.5 * SCALE, 16 * SCALE, 18 * SCALE
+    draw.arc(
+        (cx - radius, cy - radius, cx + radius, cy + radius),
+        start=45,
+        end=315,
+        fill="#FFFFFF",
+        width=round(2.7 * SCALE),
     )
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

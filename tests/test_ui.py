@@ -432,14 +432,18 @@ def test_a_citation_marker_is_never_read_as_a_figure() -> None:
     assert '<mark class="figure">1,000' not in rendered  # the page number stays in its chip
 
 
-def test_the_mark_is_inline_svg_that_takes_the_colour_around_it() -> None:
+def test_the_mark_survives_the_browser_tab() -> None:
+    """One mark, three surfaces: dark brand bar, pale sidebar, 16px favicon."""
     from citara.ui import logo
 
-    lockup = logo.lockup("NDMA doctrine assistant")
-    assert "<svg" in lockup and 'stroke="currentColor"' in lockup
-    assert "CITARA" in lockup
-    assert "NDMA doctrine assistant" in lockup
+    assert 'fill="#FFFFFF"' in logo.on_dark()  # a light tile on the teal bar
+    assert 'fill="#0E3B3E"' in logo.on_light()  # a teal tile on the pale sidebar
     assert 'width="16"' in logo.mark(size=16)
+    assert 'aria-label="CITARA"' in logo.mark()
+
+    wordmark = logo.wordmark()
+    assert "<svg" in wordmark
+    assert "CITARA" in wordmark
 
 
 # --- document structure (feature 60) -------------------------------------------------
@@ -461,9 +465,9 @@ def test_an_exchange_is_an_article_headed_by_its_question() -> None:
 
     assert '<article class="turn" aria-labelledby="q-1">' in html
     assert '<h2 class="question" id="q-1">How many died?</h2>' in html
-    assert '<h3 class="section-label" id="a-1">Answer</h3>' in html
-    assert '<h3 class="section-label" id="e-1">Evidence</h3>' in html
-    assert '<h3 class="section-label" id="s-1">Sources' in html
+    assert '<h3 class="section-label label-answer" id="a-1">Answer</h3>' in html
+    assert '<h3 class="section-label label-evidence" id="e-1">Evidence</h3>' in html
+    assert '<h3 class="section-label label-sources" id="s-1">Sources' in html
     # Each part is a region named by its own heading.
     assert '<section class="turn-section" aria-labelledby="a-1">' in html
 
@@ -546,3 +550,19 @@ def test_document_text_keeps_its_tables_and_loses_its_scripts() -> None:
     assert "<table>" in rendered and "<th>deaths</th>" in rendered
     assert "<script>" not in rendered
     assert "&lt;script&gt;" in rendered
+
+
+def test_the_corpus_list_folds_away_behind_its_totals() -> None:
+    """Nineteen documents buried the filters underneath them in the sidebar."""
+    corpus = Corpus(
+        documents=[
+            CorpusDocument("a", "Plan A", 2026, 40, 40, 100),
+            CorpusDocument("b", "Plan B", 2025, 20, 18, 60, "2 scanned pages not searchable"),
+        ]
+    )
+    html = markup.corpus_list(corpus)
+
+    assert '<details class="corpus-panel">' in html
+    assert '<summary class="corpus-summary">Show all 2 documents</summary>' in html
+    assert "Plan A (2026)" in html and "18 of 20 pages" in html
+    assert "2 scanned pages not searchable" in html

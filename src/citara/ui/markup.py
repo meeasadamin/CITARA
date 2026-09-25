@@ -88,9 +88,13 @@ def answer_body(answer: GeneratedAnswer) -> str:
     return _TOKEN.sub(lambda m: stash[int(m.group(1))], rendered)
 
 
-def _label(text: str, identifier: str, count: str = "", level: str = "h3") -> str:
+def _label(
+    text: str, identifier: str, count: str = "", level: str = "h3", variant: str = ""
+) -> str:
+    """A section heading. The variant colours it, so the parts of an answer read apart."""
     suffix = f'<span class="count">{escape(count)}</span>' if count else ""
-    return f'<{level} class="section-label" id="{identifier}">{escape(text)}{suffix}</{level}>'
+    classes = f"section-label label-{variant}" if variant else "section-label"
+    return f'<{level} class="{classes}" id="{identifier}">{escape(text)}{suffix}</{level}>'
 
 
 def _notice_section(answer: GeneratedAnswer, index: int) -> str:
@@ -108,7 +112,7 @@ def _notice_section(answer: GeneratedAnswer, index: int) -> str:
     body = answer.text.split("\n\n", 1)[0] if answer.mode == "degraded" else answer.text
     return (
         f'<section class="turn-section" aria-labelledby="n-{index}">'
-        f"{_label(label, f'n-{index}')}"
+        f"{_label(label, f'n-{index}', variant='notice')}"
         f'<div class="citara-notice notice-{notice.kind}">'
         f"<strong>{escape(notice.heading)}</strong>{markdown(body)}</div></section>"
     )
@@ -128,7 +132,7 @@ def _evidence_section(answer: GeneratedAnswer, ui: UiSettings, index: int) -> st
         return ""
     return (
         f'<section class="turn-section" aria-labelledby="e-{index}">'
-        f"{_label('Evidence', f'e-{index}')}"
+        f"{_label('Evidence', f'e-{index}', variant='evidence')}"
         f'<p class="citara-meta">{"".join(parts)}</p></section>'
     )
 
@@ -166,7 +170,7 @@ def _sources_section(answer: GeneratedAnswer, index: int) -> str:
     open_now = " open" if answer.mode == "degraded" else ""
     return (
         f'<section class="turn-section" aria-labelledby="s-{index}">'
-        f"{_label('Sources', f's-{index}', count=count)}"
+        f"{_label('Sources', f's-{index}', count=count, variant='sources')}"
         f'<details class="sources-panel"{open_now}><summary>Show the passages</summary>'
         f'<ol class="source-list">{"".join(items)}</ol></details></section>'
     )
@@ -195,7 +199,7 @@ def turn_article(turn: Turn, settings: Settings, index: int) -> str:
     scope = f'<p class="citara-scope">Searched: {escape(turn.scope)}</p>' if turn.scope else ""
     body = (
         f'<section class="turn-section" aria-labelledby="a-{index}">'
-        f"{_label('Answer', f'a-{index}')}"
+        f"{_label('Answer', f'a-{index}', variant='answer')}"
         f'<div class="answer-body">{answer_body(answer)}</div></section>'
         if answer.mode == "generated"
         else ""
@@ -225,7 +229,8 @@ def streaming_article(question: str, streamed: str) -> str:
         '<article class="turn" aria-busy="true">'
         '<p class="section-label" aria-hidden="true">Question</p>'
         f'<h2 class="question">{escape(question)}</h2>'
-        f'<section class="turn-section"><h3 class="section-label">Answer</h3>{body}</section>'
+        f'<section class="turn-section">'
+        f'<h3 class="section-label label-answer">Answer</h3>{body}</section>'
         "</article>"
     )
 
@@ -258,7 +263,12 @@ def footer(corpus: Corpus, built_at: str, repository: str) -> str:
 
 
 def corpus_list(corpus: Corpus) -> str:
-    """The knowledge boundary, as a list of what is searchable and what is not."""
+    """The knowledge boundary, folded away behind its totals.
+
+    Nineteen documents fill a sidebar and bury the filters under them, but the boundary is the
+    one thing a reader should always be able to check, so it stays one click away rather than
+    moving somewhere else entirely.
+    """
     items = []
     for document in corpus.documents:
         if document.searchable:
@@ -271,4 +281,9 @@ def corpus_list(corpus: Corpus) -> str:
             pages = "not searchable"
         gap = f'<br><span class="gap">{escape(document.note)}</span>' if document.note else ""
         items.append(f'<li>{escape(document.label)} <span class="pages">· {pages}</span>{gap}</li>')
-    return f'<ul class="corpus-list">{"".join(items)}</ul>'
+    searchable = len(corpus.searchable)
+    summary = f"Show all {searchable} document{'s' if searchable != 1 else ''}"
+    return (
+        f'<details class="corpus-panel"><summary class="corpus-summary">{summary}</summary>'
+        f'<ul class="corpus-list">{"".join(items)}</ul></details>'
+    )

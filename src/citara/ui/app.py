@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from citara.config import Settings, get_settings
 from citara.generation.models import GeneratedAnswer
@@ -75,6 +76,20 @@ FAVICON = Path(__file__).resolve().parents[3] / "assets" / "favicon.png"
 # Gwadar-specific threshold - because showing the refusal unprompted beats hoping it is asked.
 # Rejected on the same run: agriculture damage (the table holding the figure was not
 # retrieved) and district control-room preparation (answered only in part).
+# Everything the picker offers, the starters included. Each was run against the real index
+# on 2026-09-20 and answered with citations, except the last, which is the refusal.
+SUGGESTIONS: tuple[str, ...] = (
+    "How many people died in the Quetta earthquake?",
+    "How much damage did the water resources and irrigation sector suffer in 2022?",
+    "How does NDMA disseminate early warnings to communities?",
+    "What does NDMA advise people to do during a heatwave?",
+    "What is NDMA's legal mandate in a national emergency?",
+    "Which months does NDMA treat as the monsoon period?",
+    "What must a district do to prepare its control room before the heatwave season?",
+    "What preparations does NDMA require before the monsoon arrives?",
+    "Which temperature threshold triggers a district-level heatwave alert specifically for Gwadar?",
+)
+
 STARTERS: tuple[str, ...] = (
     "How many people died in the Quetta earthquake?",
     "How much damage did the water resources and irrigation sector suffer in 2022?",
@@ -139,7 +154,7 @@ def main() -> None:
     st.set_page_config(
         page_title=settings.ui.page_title,
         page_icon=str(FAVICON) if FAVICON.is_file() else ":material/menu_book:",
-        layout="centered",
+        layout="wide",
         initial_sidebar_state="auto",
     )
     st.markdown(CSS, unsafe_allow_html=True)
@@ -175,6 +190,10 @@ def main() -> None:
     for index, turn in enumerate(state.turns, start=1):
         _render_turn(turn, settings, index)
 
+    # Created here, filled by _ask: a new turn belongs with the conversation above, not
+    # below the picker that comes after it in the script.
+    answer_slot = st.empty()
+
     pending = state.pop("pending", None)
     if not state.turns and pending is None:
         _empty_state()
@@ -186,13 +205,14 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
+    _question_picker(state)
     typed = st.chat_input(
         "Ask about NDMA plans, advisories and guidelines",
         max_chars=settings.guardrails.max_query_chars,
     )
     question = (pending or typed or "").strip()
     if question:
-        _ask(question, answerer, settings, scope)
+        _ask(question, answerer, settings, scope, answer_slot)
 
     _footer(corpus, settings)
     # Rendered last so the transcript and the remaining-question count include this turn.
@@ -205,7 +225,7 @@ def main() -> None:
 def _header(settings: Settings) -> None:
     """Brand bar and the prototype disclaimer, visible on every screen size (feature 47)."""
     st.markdown(
-        markup.header(SUBTITLE, settings.guardrails.prototype_disclaimer, logo.mark()),
+        markup.header(SUBTITLE, settings.guardrails.prototype_disclaimer, logo.on_dark()),
         unsafe_allow_html=True,
     )
 
@@ -301,6 +321,34 @@ def _queue(question: str) -> None:
     st.session_state.pending = question
 
 
+def _pick() -> None:
+    """Ask the question chosen in the picker, then clear it for the next one."""
+    chosen = st.session_state.get("picker")
+    if chosen:
+        st.session_state.pending = chosen
+        st.session_state.picker = None
+
+
+def _question_picker(state: object) -> None:
+    """A searchable list of questions this corpus answers (feature 58).
+
+    Streamlit's chat box reports nothing until it is submitted, so it cannot suggest while
+    someone types. A selectbox can: it filters its options on every keystroke, which is the
+    same help in the one place the framework allows it.
+    """
+    asked = [turn.question for turn in st.session_state.turns]
+    options = list(dict.fromkeys([*SUGGESTIONS, *asked]))
+    st.selectbox(
+        "Find a question",
+        options=options,
+        index=None,
+        key="picker",
+        on_change=_pick,
+        placeholder="Type to filter questions this corpus answers, or ask your own below",
+        label_visibility="collapsed",
+    )
+
+
 def _clear() -> None:
     st.session_state.turns = []
 
@@ -343,14 +391,20 @@ def _scope_text(corpus: Corpus, doc_ids: list[str], year: int | None) -> str:
 # -- a question and its answer ----------------------------------------------------------
 
 
-def _ask(question: str, answerer: Answerer, settings: Settings, scope: str) -> None:
-    """Stream an answer, then replace the stream with the finished, validated answer."""
+def _ask(
+    question: str,
+    answerer: Answerer,
+    settings: Settings,
+    scope: str,
+    slot: DeltaGenerator,
+) -> None:
+    """Stream an answer into *slot*, then replace it with the finished, validated answer."""
     state = st.session_state
     doc_ids = list(state.get("doc_filter") or []) or None
     year = _selected_year(state)
     history = [turn.question for turn in state.turns]
 
-    live = st.empty()
+    live = slot
     # Retrieval and reranking take seconds before the first word can stream, and an empty
     # answer area for that long reads as a crash (feature 41).
     live.markdown(markup.streaming_article(question, ""), unsafe_allow_html=True)
@@ -403,6 +457,7 @@ def _sidebar(
 ) -> None:
     state = st.session_state
     with st.sidebar:
+        st.markdown(logo.wordmark(), unsafe_allow_html=True)
         _label("Search within")
         labels = {d.doc_id: d.label for d in corpus.searchable}
         st.multiselect(
