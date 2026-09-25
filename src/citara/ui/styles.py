@@ -254,15 +254,59 @@ mark.figure {{
 .corpus-list .pages {{ color: {MUTED}; }}
 .corpus-list .gap {{ color: {COPPER}; }}
 
-/* Starter questions read as a list, so they align left; sidebar buttons stay centred. */
+/* -- asking a question ------------------------------------------------------------------- */
+/* Starter questions read as a list, so they align left; sidebar buttons stay centred. Each
+   carries the colour of the answer it will give: teal for the three the corpus answers, and
+   copper - the colour the notices already use - for the fourth, which is the refusal the
+   caption above them promises. The colour is a label, not decoration. */
 [data-testid="stMainBlockContainer"] .stButton button {{
   justify-content: flex-start; text-align: left; white-space: normal;
   min-height: 0; padding-top: 0.42rem; padding-bottom: 0.42rem;
+  color: {TEAL}; background: #FFFFFF;
+  border: 1px solid {BORDER}; border-left: 4px solid {TEAL_MID};
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}}
+[data-testid="stMainBlockContainer"] .stButton button:hover {{
+  background: {TEAL_TINT}; border-color: {TEAL_MID}; border-left-color: {TEAL}; color: {TEAL_DEEP};
+}}
+[data-testid="stMainBlockContainer"] .st-key-starter-3 button {{
+  color: {COPPER}; border-left-color: {COPPER};
+}}
+[data-testid="stMainBlockContainer"] .st-key-starter-3 button:hover {{
+  background: {COPPER_TINT}; border-color: {COPPER}; color: #6E3C0F;
 }}
 [data-testid="stMainBlockContainer"] .stButton button > div {{
   justify-content: flex-start; width: 100%;
 }}
-[data-testid="stMainBlockContainer"] .stButton button p {{ text-align: left; }}
+[data-testid="stMainBlockContainer"] .stButton button p {{
+  text-align: left; color: inherit; font-weight: 600;
+}}
+
+/* The picker is the only place the interface can say what this corpus answers while someone
+   is still typing, and it looks like a filter bar until it is noticed. Given the brand's own
+   border and a ring that breathes three times and then stops - long enough to find, short
+   enough not to nag, and nothing at all for a reader who asks for less motion. */
+[data-testid="stMainBlockContainer"] .react-aria-ComboBox > div {{
+  border: 2px solid {TEAL_MID}; border-radius: 8px; background: #FFFFFF;
+  animation: citara-invite 2.1s ease-out 3;
+}}
+@keyframes citara-invite {{
+  0%, 100% {{ box-shadow: 0 0 0 0 rgba(20, 102, 107, 0); }}
+  45% {{ box-shadow: 0 0 0 5px rgba(20, 102, 107, 0.16); }}
+}}
+
+/* The composer is where a question actually goes, so it is drawn as a field waiting for one
+   rather than a grey strip under the page, and it answers when the cursor arrives. */
+[data-testid="stChatInput"],
+[data-testid="stChatInput"] > div {{ background: #FFFFFF; }}
+[data-testid="stChatInput"] {{
+  border: 2px solid {BORDER}; border-radius: 6px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}}
+[data-testid="stChatInput"]:focus-within {{
+  border-color: {TEAL_MID}; box-shadow: 0 0 0 3px rgba(20, 102, 107, 0.14);
+}}
+[data-testid="stChatInputSubmitButton"] {{ color: {TEAL_MID}; }}
 
 @media (max-width: 640px) {{
   /* The top bar holding the sidebar toggle overlays the page on a phone, so the brand bar
