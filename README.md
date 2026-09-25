@@ -47,6 +47,7 @@ CITARA turns a static PDF archive into a queryable decision-support layer, cutti
 | Chunking | Semantic breakpoint chunking with deterministic recursive fallback and near-duplicate removal |
 | Security | Prompt-injection screening on user input **and** on retrieved document text |
 | Resilience | Retry with backoff, LLM provider failover, response caching, degraded mode returning cited sources, a daily budget counted per request |
+| Accessible structure | Semantic landmarks and headings, `<cite>` citations, `<mark>` figures, `<details>` sources; audited clean against WCAG 2.2 AA with axe-core |
 | Data sovereignty | Embeddings and reranking run locally on CPU — document content never leaves the host for indexing |
 | Evaluation | 30-question gold set, Hit Rate@k, MRR, p50/p95 latency, and a five-configuration ablation that changed the defaults |
 
@@ -143,7 +144,8 @@ src/citara/
   guardrails/   prompt-injection defense, scope control
   generation/   grounded generation, citations, provider failover
   resilience/   quota budgeting, caching, backoff, degraded mode
-  ui/           Streamlit interface: layout in app.py, rendering rules in presenters.py
+  ui/           Streamlit interface: layout in app.py, document structure in markup.py,
+                what an answer means in presenters.py
 streamlit_app.py  entry point for Streamlit (and Streamlit Community Cloud)
 eval/           gold questions, metrics, ablation runs
 tests/

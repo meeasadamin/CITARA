@@ -12,6 +12,7 @@ process through ``st.cache_resource``.
 from __future__ import annotations
 
 import html
+import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,7 +24,7 @@ from citara.config import Settings, get_settings
 from citara.generation.models import GeneratedAnswer
 from citara.indexing import fetch
 from citara.log import configure_logging, get_logger
-from citara.ui import health, logo, presenters
+from citara.ui import health, logo, markup, presenters
 from citara.ui.corpus import Corpus, load_corpus
 from citara.ui.styles import CSS
 
@@ -34,16 +35,37 @@ log = get_logger("ui")
 
 SUBTITLE = "Citation-grounded answers from NDMA's published disaster-management documents"
 ANY_YEAR = "Any year"
+REPOSITORY = "https://github.com/meeasadamin/CITARA"
+
+# Streamlit's shell has no main landmark and no complementary one, so every element on the
+# page counts as content outside any region - a screen reader cannot jump to the conversation
+# or skip the filters. These attributes are the only thing this script sets, it re-applies
+# harmlessly on every rerun, and it is the one place the interface needs JavaScript.
+_LANDMARKS = """<script>
+(() => {
+  const win = window.parent || window;
+  const doc = win.document;
+  const apply = () => {
+    const main = doc.querySelector('section.stMain, [data-testid="stMain"]');
+    if (main && main.getAttribute('role') !== 'main') {
+      main.setAttribute('role', 'main');
+      main.setAttribute('aria-label', 'Questions and answers');
+      main.setAttribute('tabindex', '-1');
+      main.id = 'citara-main';
+    }
+    const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+    if (sidebar && !sidebar.getAttribute('aria-label')) {
+      sidebar.setAttribute('aria-label', 'Filters, session and corpus');
+    }
+  };
+  // Retried rather than observed: this component is torn down and rebuilt on every rerun,
+  // which takes any MutationObserver with it, and the main container is not always in the
+  // document at the moment the script first runs.
+  [0, 80, 250, 800, 2000].forEach((delay) => win.setTimeout(apply, delay));
+})();
+</script>"""
 FAVICON = Path(__file__).resolve().parents[3] / "assets" / "favicon.png"
 
-# What each kind of turn is called above its rule.
-_NOTICE_LABEL = {
-    "refusal": "Refused",
-    "degraded": "Degraded",
-    "blocked": "Declined",
-    "scope": "Out of scope",
-    "limit": "Limit reached",
-}
 
 # Curated for a ninety-second demo (feature 58) and chosen by running candidates live, not by
 # guessing: each of the first three returned High evidence and cited answers on 2026-09-20.
@@ -121,6 +143,11 @@ def main() -> None:
         initial_sidebar_state="auto",
     )
     st.markdown(CSS, unsafe_allow_html=True)
+    st.html(_LANDMARKS, unsafe_allow_javascript=True)
+    st.markdown(
+        '<a class="skip-link" href="#citara-main">Skip to the conversation</a>',
+        unsafe_allow_html=True,
+    )
     _header(settings)
 
     if not _bootstrap_index(settings):
@@ -145,8 +172,8 @@ def main() -> None:
     if "turns" not in state:
         state.turns = []
 
-    for turn in state.turns:
-        _render_turn(turn, settings)
+    for index, turn in enumerate(state.turns, start=1):
+        _render_turn(turn, settings, index)
 
     pending = state.pop("pending", None)
     if not state.turns and pending is None:
@@ -167,6 +194,7 @@ def main() -> None:
     if question:
         _ask(question, answerer, settings, scope)
 
+    _footer(corpus, settings)
     # Rendered last so the transcript and the remaining-question count include this turn.
     _sidebar(settings, corpus, answerer, problems)
 
@@ -177,28 +205,26 @@ def main() -> None:
 def _header(settings: Settings) -> None:
     """Brand bar and the prototype disclaimer, visible on every screen size (feature 47)."""
     st.markdown(
-        f'<div class="citara-header">{logo.lockup(SUBTITLE)}</div>'
-        f'<div class="citara-disclaimer">{html.escape(settings.guardrails.prototype_disclaimer)}'
-        "</div>",
+        markup.header(SUBTITLE, settings.guardrails.prototype_disclaimer, logo.mark()),
         unsafe_allow_html=True,
     )
 
 
-def _label(text: str, first: bool = False, count: str = "") -> None:
-    """A small-caps section label over a hairline rule."""
-    suffix = f'<span class="count">{html.escape(count)}</span>' if count else ""
-    st.markdown(
-        f'<span class="section-label{" first" if first else ""}">{html.escape(text)}{suffix}'
-        "</span>",
-        unsafe_allow_html=True,
-    )
+def _label(text: str) -> None:
+    """A sidebar section heading: small caps over a hairline rule, and a real heading."""
+    st.markdown(f'<h2 class="section-label">{html.escape(text)}</h2>', unsafe_allow_html=True)
 
 
-def _question(text: str) -> None:
-    st.markdown(
-        f'<div class="citara-question">{presenters.safe_markdown(text)}</div>',
-        unsafe_allow_html=True,
-    )
+def _footer(corpus: Corpus, settings: Settings) -> None:
+    """Site footer: what the assistant knows, where the code is, and what it is not."""
+    built = ""
+    manifest = settings.paths.resolved(settings.paths.index_manifest_path)
+    if manifest.is_file():
+        try:
+            built = str(json.loads(manifest.read_text(encoding="utf-8")).get("built_at", ""))
+        except (OSError, ValueError):
+            built = ""
+    st.markdown(markup.footer(corpus, built, REPOSITORY), unsafe_allow_html=True)
 
 
 def _show_problem(problem: health.Problem) -> None:
@@ -324,108 +350,49 @@ def _ask(question: str, answerer: Answerer, settings: Settings, scope: str) -> N
     year = _selected_year(state)
     history = [turn.question for turn in state.turns]
 
-    with st.chat_message("user"):
-        _label("Question", first=True)
-        _question(question)
+    live = st.empty()
+    # Retrieval and reranking take seconds before the first word can stream, and an empty
+    # answer area for that long reads as a crash (feature 41).
+    live.markdown(markup.streaming_article(question, ""), unsafe_allow_html=True)
 
     final: GeneratedAnswer | None = None
-    with st.chat_message("assistant"):
-        live = st.empty()
-        # Retrieval and reranking take seconds before the first word can stream, and an empty
-        # answer area for that long reads as a crash (feature 41). Replaced by the first piece.
-        live.markdown(
-            '<div class="citara-searching">Searching the indexed documents…</div>',
-            unsafe_allow_html=True,
-        )
-        streamed = ""
-        try:
-            for piece, answer in answerer.stream(
-                question,
-                history=history,
-                doc_ids=doc_ids,
-                year=year,
-                session_id=state.session_id,
-            ):
-                if answer is None:
-                    streamed += piece
-                    live.markdown(presenters.safe_markdown(streamed) + " ▌")
-                else:
-                    final = answer
-        except Exception:
-            log.exception("answering failed", extra={"question": question[:120]})
-            live.empty()
-            st.error(_ANSWER_FAILED, icon=":material/error:")
-            return
-        # The finished answer is authoritative. A provider that failed part-way is discarded
-        # by the answerer, so what was streamed may belong to an answer that no longer exists.
+    streamed = ""
+    try:
+        for piece, answer in answerer.stream(
+            question,
+            history=history,
+            doc_ids=doc_ids,
+            year=year,
+            session_id=state.session_id,
+        ):
+            if answer is None:
+                streamed += piece
+                # Deliberately not a live region while it streams: a screen reader fed token
+                # by token stutters through half-words. The finished article announces itself
+                # once, through the status line markup adds to it.
+                live.markdown(markup.streaming_article(question, streamed), unsafe_allow_html=True)
+            else:
+                final = answer
+    except Exception:
+        log.exception("answering failed", extra={"question": question[:120]})
         live.empty()
-        if final is None:
-            st.error(_ANSWER_FAILED, icon=":material/error:")
-            return
-        _render_answer(final, settings)
+        st.error(_ANSWER_FAILED, icon=":material/error:")
+        return
+
+    if final is None:
+        live.empty()
+        st.error(_ANSWER_FAILED, icon=":material/error:")
+        return
 
     turn = presenters.Turn(question=question, answer=final, asked_at=datetime.now(UTC), scope=scope)
     state.turns = [*state.turns, turn][-settings.ui.max_history_messages :]
+    # The finished answer is authoritative: a provider that failed part-way is discarded by
+    # the answerer, so what was streamed may belong to an answer that no longer exists.
+    live.markdown(markup.turn_article(turn, settings, len(state.turns)), unsafe_allow_html=True)
 
 
-def _render_turn(turn: presenters.Turn, settings: Settings) -> None:
-    with st.chat_message("user"):
-        _label("Question", first=True)
-        _question(turn.question)
-    with st.chat_message("assistant"):
-        _render_answer(turn.answer, settings)
-
-
-def _render_answer(answer: GeneratedAnswer, settings: Settings) -> None:
-    heading = presenters.notice(answer)
-    if heading is not None:
-        _label(_NOTICE_LABEL[heading.kind])
-        # A degraded answer's text is the notice followed by the passages, which the source
-        # panel below shows properly; only the explanation belongs in the box.
-        body = answer.text.split("\n\n", 1)[0] if answer.mode == "degraded" else answer.text
-        st.markdown(
-            f'<div class="citara-notice notice-{heading.kind}"><strong>'
-            f"{html.escape(heading.heading)}</strong>{presenters.safe_markdown(body)}</div>",
-            unsafe_allow_html=True,
-        )
-    if answer.mode == "generated":
-        _label("Answer")
-        st.markdown(presenters.render_answer_html(answer), unsafe_allow_html=True)
-
-    _label("Evidence")
-    meta = []
-    band = presenters.evidence_band(answer, settings.ui)
-    if band is not None:
-        explanation = html.escape(presenters.BAND_EXPLANATION[band])
-        meta.append(f'<span class="band band-{band}" title="{explanation}">{band}</span>')
-        if band == "Low":
-            meta.append(f"<span>{explanation}</span>")
-    if settings.ui.show_latency:
-        meta.append(f"<span>{html.escape(presenters.latency_line(answer))}</span>")
-    st.markdown(f'<div class="citara-meta">{"".join(meta)}</div>', unsafe_allow_html=True)
-
-    rows = presenters.source_rows(answer)
-    if not rows:
-        return
-    if answer.mode == "generated":
-        cited = sum(row.cited for row in rows)
-        count = f"{cited} cited of {len(rows)} retrieved"
-    else:
-        count = f"{len(rows)} retrieved"
-    _label("Sources", count=count)
-    with st.expander("Show the passages", expanded=answer.mode == "degraded"):
-        for row in rows:
-            score = f"relevance {row.score:.2f}" if row.score is not None else ""
-            status = ""
-            if answer.mode == "generated":
-                status = "cited in the answer" if row.cited else "retrieved, not cited"
-            st.markdown(
-                f'<div class="source-head"><span class="cite-chip">{row.marker}</span> '
-                f"<strong>{html.escape(row.citation)}</strong> "
-                f'<span class="score">{score}</span> <span class="state">{status}</span></div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(presenters.safe_markdown(row.text))
+def _render_turn(turn: presenters.Turn, settings: Settings, index: int) -> None:
+    st.markdown(markup.turn_article(turn, settings, index), unsafe_allow_html=True)
 
 
 # -- sidebar ----------------------------------------------------------------------------
@@ -436,7 +403,7 @@ def _sidebar(
 ) -> None:
     state = st.session_state
     with st.sidebar:
-        _label("Search within", first=True)
+        _label("Search within")
         labels = {d.doc_id: d.label for d in corpus.searchable}
         st.multiselect(
             "Documents",
@@ -482,32 +449,9 @@ def _sidebar(
             f"{len(corpus.searchable)} documents · {corpus.searchable_pages:,} of "
             f"{corpus.total_pages:,} pages searchable. Answers come only from these."
         )
-        st.markdown(_corpus_list(corpus), unsafe_allow_html=True)
+        st.markdown(markup.corpus_list(corpus), unsafe_allow_html=True)
 
         for problem in problems:
             if problem.severity == "info":
                 st.caption(f"**{problem.title}.** {problem.detail}")
         st.caption(settings.guardrails.prototype_disclaimer)
-
-
-def _corpus_list(corpus: Corpus) -> str:
-    items = []
-    for document in corpus.documents:
-        if document.searchable:
-            pages = (
-                f"{document.searchable_pages} of {document.total_pages} pages"
-                if document.searchable_pages < document.total_pages
-                else f"{document.total_pages} pages"
-            )
-            gap = (
-                f'<br><span class="gap">{html.escape(document.note)}</span>'
-                if document.note
-                else ""
-            )
-        else:
-            pages = "not searchable"
-            gap = f'<br><span class="gap">{html.escape(document.note)}</span>'
-        items.append(
-            f'<li>{html.escape(document.label)} <span class="pages">· {pages}</span>{gap}</li>'
-        )
-    return f'<ul class="corpus-list">{"".join(items)}</ul>'

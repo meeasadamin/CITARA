@@ -159,8 +159,9 @@ def test_a_starter_is_answered_with_citation_chips(app: AppTest, fake: FakeAnswe
     rendered = all_markdown(app)
     assert 'class="cite-chip"' in rendered
     assert "1 · p. 47" in rendered
-    assert '<span class="section-label">Answer</span>' in rendered
-    assert '<span class="section-label first">Question</span>' in rendered
+    assert '<h3 class="section-label" id="a-1">Answer</h3>' in rendered
+    assert '<h2 class="question" id="q-1">' in rendered
+    assert '<article class="turn" aria-labelledby="q-1">' in rendered
     assert '<span class="band band-High"' in rendered
     assert "Retrieval 3.4 s" in rendered
     # Once asked, the starters give way to the conversation.

