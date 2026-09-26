@@ -441,7 +441,15 @@ class EvaluationSettings(BaseModel):
     )
     judge_model: str = Field(
         default="gemini-3.5-flash-lite",
-        description="Scores faithfulness and answer relevance (features 68, 69).",
+        description="Scores faithfulness and answer relevance (features 68, 69) on Gemini.",
+    )
+    judge_provider: str = Field(
+        default="groq",
+        description=(
+            "Which provider judges. Defaults to the failover rather than the primary, because "
+            "the primary wrote the answers and a model scoring its own output shares the blind "
+            "spots it is being asked to find. Run the other one as a cross-check."
+        ),
     )
     judge_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
 

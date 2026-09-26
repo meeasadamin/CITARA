@@ -49,7 +49,7 @@ CITARA turns a static PDF archive into a queryable decision-support layer, cutti
 | Resilience | Retry with backoff, LLM provider failover, response caching, degraded mode returning cited sources, a daily budget counted per request |
 | Accessible structure | Semantic landmarks and headings, `<cite>` citations, `<mark>` figures, `<details>` sources; audited clean against WCAG 2.2 AA with axe-core |
 | Data sovereignty | Embeddings and reranking run locally on CPU — document content never leaves the host for indexing |
-| Evaluation | 30-question gold set, Hit Rate@k, MRR, p50/p95 latency, and a five-configuration ablation that changed the defaults |
+| Evaluation | 30-question gold set, Hit Rate@k, MRR, faithfulness and answer relevance scored by an independent model, p50/p95 latency, and a five-configuration ablation that changed the defaults |
 
 ## Architecture
 
@@ -97,7 +97,7 @@ flowchart TD
 - [x] Resilience — retry with backoff, disk cache, per-request daily budget, session cap, degraded mode, startup warm-up
 - [x] Streamlit interface — page-level citation chips, source panel, evidence band, corpus boundary, refusal and error states, cold-start loading state, transcript export; tested at phone width
 - [x] Ablation study — five configurations from one command ([`eval/ABLATION.md`](eval/ABLATION.md))
-- [ ] Faithfulness and answer-relevance scoring, latency benchmarks
+- [x] Faithfulness and answer-relevance scoring, latency benchmarks ([`eval/GENERATION.md`](eval/GENERATION.md))
 - [ ] Public deployment — index published as a release asset and fetched on first start
 
 ## Getting started

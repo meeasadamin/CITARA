@@ -104,3 +104,9 @@ def test_sample_size_caveat_is_computed_not_asserted() -> None:
 
 def test_render_handles_an_empty_run() -> None:
     assert "Ablation study" in render_markdown([], gold_set())
+
+
+def test_re_rendering_keeps_the_date_the_numbers_were_measured_on() -> None:
+    """Re-rendering measures nothing, so it must not date the numbers to today."""
+    markdown = render_markdown([row("dense", 0.5, 0.3, 6)], gold_set(), "2026-09-18T10:00:00+00:00")
+    assert "on 2026-09-18" in markdown
