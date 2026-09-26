@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -193,9 +194,68 @@ def check_health(settings: Settings) -> list[health.Problem]:
 # -- entry point ------------------------------------------------------------------------
 
 
+_SECRET_NAMES = (
+    "GOOGLE_API_KEY",
+    "GROQ_API_KEY",
+    "CITARA_GOOGLE_API_KEY",
+    "CITARA_GROQ_API_KEY",
+    "CITARA_INDEX_URL",
+    "CITARA_INDEX_SHA256",
+)
+
+
+def adopt_streamlit_secrets() -> list[str]:
+    """Make a hosted deployment's Secrets visible to the settings object.
+
+    Settings read the environment, which is what lets the same names work in a local ``.env``
+    and in a deployment. Streamlit exports ``secrets.toml`` to the environment too, but only
+    top-level scalars: a key written under a ``[section]`` heading - which is how most TOML
+    examples are laid out - never reaches ``os.environ``, and the app then reports no provider
+    configured while the operator can plainly see the value in the Secrets box.
+
+    So the names are copied across here, flattening one level of section so either layout
+    works. Existing environment variables win, because a real deployment override should not
+    be undone by a stale secret. Returns the names adopted, never the values.
+    """
+    try:
+        secrets = st.secrets
+        items = list(secrets.items())
+    except Exception:  # no secrets.toml at all, which is the normal local case
+        return []
+
+    flat: dict[str, str] = {}
+    for key, value in items:
+        if isinstance(value, str):
+            flat.setdefault(key, value)
+        elif hasattr(value, "items"):  # one level of [section]
+            try:
+                for inner_key, inner_value in value.items():
+                    if isinstance(inner_value, str):
+                        flat.setdefault(inner_key, inner_value)
+            except Exception:
+                continue
+
+    adopted = []
+    for name in _SECRET_NAMES:
+        value = flat.get(name, "").strip()
+        if value and not os.environ.get(name, "").strip():
+            os.environ[name] = value
+            adopted.append(name)
+    return adopted
+
+
 def main() -> None:
+    # Before the first get_settings(), which caches what it reads for the whole process.
+    adopted = adopt_streamlit_secrets()
+    if adopted:
+        get_settings.cache_clear()
+
     settings = get_settings()
     configure_logging(settings.log_level)
+    if adopted:
+        # Names only. A key must never reach a log, and these logs are readable in the
+        # hosting dashboard by anyone who can see the deployment.
+        log.info("adopted secrets from the host", extra={"names": ", ".join(adopted)})
     st.set_page_config(
         page_title=settings.ui.page_title,
         page_icon=str(FAVICON) if FAVICON.is_file() else ":material/menu_book:",

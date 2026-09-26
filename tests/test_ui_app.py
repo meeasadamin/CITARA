@@ -6,6 +6,7 @@ kind of answer - chips, refusals, failures, filters - in seconds rather than min
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -144,6 +145,63 @@ def test_a_deployment_with_no_index_downloads_it_without_crashing(
     assert not at.exception, [str(e) for e in at.exception]
     # The callback still reaches the downloader; it is only kept out of the cache key.
     assert asked and callable(asked[0])
+
+
+class FakeSecrets(dict):
+    """Stands in for st.secrets, which is a mapping that may raise when there is no file."""
+
+
+def test_a_key_written_under_a_section_still_reaches_the_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Streamlit exports only top-level secrets to the environment.
+
+    Most TOML examples put values under a [section] heading, and a key written that way is
+    visible in the hosting dashboard and invisible to the app, which then reports that no
+    provider is configured.
+    """
+    import citara.ui.app as ui
+
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr(ui.st, "secrets", FakeSecrets({"general": {"GOOGLE_API_KEY": "sk-test"}}))
+
+    adopted = ui.adopt_streamlit_secrets()
+
+    assert adopted == ["GOOGLE_API_KEY"]
+    assert os.environ["GOOGLE_API_KEY"] == "sk-test"
+
+
+def test_a_top_level_key_is_adopted_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    import citara.ui.app as ui
+
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(ui.st, "secrets", FakeSecrets({"GROQ_API_KEY": "gsk-test"}))
+
+    assert ui.adopt_streamlit_secrets() == ["GROQ_API_KEY"]
+    assert os.environ["GROQ_API_KEY"] == "gsk-test"
+
+
+def test_the_environment_wins_over_a_stale_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deployment override must not be undone by whatever is left in secrets.toml."""
+    import citara.ui.app as ui
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "from-the-environment")
+    monkeypatch.setattr(ui.st, "secrets", FakeSecrets({"GOOGLE_API_KEY": "from-the-file"}))
+
+    assert ui.adopt_streamlit_secrets() == []
+    assert os.environ["GOOGLE_API_KEY"] == "from-the-environment"
+
+
+def test_no_secrets_file_is_the_normal_local_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Accessing st.secrets raises when there is no file; that must not break startup."""
+    import citara.ui.app as ui
+
+    class Exploding:
+        def items(self) -> list[tuple[str, str]]:
+            raise RuntimeError("no secrets.toml")
+
+    monkeypatch.setattr(ui.st, "secrets", Exploding())
+    assert ui.adopt_streamlit_secrets() == []
 
 
 def markdown_blocks(at: AppTest) -> list[str]:
