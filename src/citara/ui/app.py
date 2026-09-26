@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 import json
+import threading
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -154,17 +155,30 @@ def load_answerer() -> Answerer:
     return answerer
 
 
-@st.cache_resource(show_spinner=False)
-def fetch_index(_settings: Settings, _on_progress: object = None) -> bool:
+_INDEX_LOCK = threading.Lock()
+_index_ready = False
+
+
+def fetch_index(settings: Settings, on_progress: object = None) -> bool:
     """Download the published index once per process, if this deployment has none.
 
-    Both parameters are underscored because Streamlit hashes every argument it is not told
-    to skip, to build the cache key. The progress callback is a closure over this run's
-    placeholder widget, which cannot be hashed, and a fresh deployment - the only place this
-    function runs at all - crashed on it. Neither argument should key the cache anyway:
-    the index is downloaded once per process, whatever is passed.
+    A lock and a flag rather than ``st.cache_resource``. The decorator hashes every argument
+    it is not told to skip in order to build a cache key, and the progress callback is a
+    closure over this run's placeholder widget, which cannot be hashed - that crashed the
+    first start of a fresh deployment, which is the only place this function ever runs.
+    Underscoring the parameters silences it, but the cache was never buying anything here:
+    there is one process and one index, and "once, and not twice at the same time" is what
+    the lock says directly, without a key to get wrong.
+
+    The lock matters because Streamlit gives each session its own thread, so two visitors
+    arriving at a cold deployment would otherwise both start downloading over each other.
     """
-    return fetch.ensure_index(_settings, _on_progress if callable(_on_progress) else None)
+    global _index_ready
+    with _INDEX_LOCK:
+        if _index_ready:
+            return True
+        _index_ready = fetch.ensure_index(settings, on_progress if callable(on_progress) else None)
+        return _index_ready
 
 
 @st.cache_resource(show_spinner=False)

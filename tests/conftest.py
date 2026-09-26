@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from citara.config import get_settings
 from citara.resilience.budget import COOLDOWNS
 
 _PROVIDER_VARS = ("GOOGLE_API_KEY", "GROQ_API_KEY", "CITARA_GOOGLE_API_KEY", "CITARA_GROQ_API_KEY")
@@ -41,7 +42,14 @@ def isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     # archive. Tests that exercise fetching pass their own URL explicitly.
     monkeypatch.setenv("CITARA_INDEX_URL", "")
 
+    # Settings are an lru_cache singleton, so the first test to build one would otherwise
+    # hand its temporary data directory to every test after it - and any test that clears the
+    # cache mid-run would replace it with its own. Cleared on the way in, so each test reads
+    # the environment set just above, and on the way out, so nothing leaks forward.
+    get_settings.cache_clear()
+
     # Quota cooldowns are process-wide by design; one test's spent quota is not another's.
     COOLDOWNS.clear()
     yield
     COOLDOWNS.clear()
+    get_settings.cache_clear()

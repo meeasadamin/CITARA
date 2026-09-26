@@ -136,7 +136,7 @@ def test_a_deployment_with_no_index_downloads_it_without_crashing(
         return True
 
     monkeypatch.setattr(ui.fetch, "ensure_index", ensure_index)
-    ui.fetch_index.clear()
+    monkeypatch.setattr(ui, "_index_ready", False)
     get_settings.cache_clear()
 
     at = AppTest.from_file(APP, default_timeout=60).run()
