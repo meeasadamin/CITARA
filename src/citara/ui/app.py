@@ -155,9 +155,16 @@ def load_answerer() -> Answerer:
 
 
 @st.cache_resource(show_spinner=False)
-def fetch_index(_settings: Settings, on_progress: object = None) -> bool:
-    """Download the published index once per process, if this deployment has none."""
-    return fetch.ensure_index(_settings, on_progress if callable(on_progress) else None)
+def fetch_index(_settings: Settings, _on_progress: object = None) -> bool:
+    """Download the published index once per process, if this deployment has none.
+
+    Both parameters are underscored because Streamlit hashes every argument it is not told
+    to skip, to build the cache key. The progress callback is a closure over this run's
+    placeholder widget, which cannot be hashed, and a fresh deployment - the only place this
+    function runs at all - crashed on it. Neither argument should key the cache anyway:
+    the index is downloaded once per process, whatever is passed.
+    """
+    return fetch.ensure_index(_settings, _on_progress if callable(_on_progress) else None)
 
 
 @st.cache_resource(show_spinner=False)

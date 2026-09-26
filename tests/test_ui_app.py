@@ -15,6 +15,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from citara.chunking.models import Chunk
+from citara.config import get_settings
 from citara.generation.citations import build_citations
 from citara.generation.models import GeneratedAnswer
 from citara.resilience.budget import RequestBudget, SessionLimiter
@@ -108,6 +109,41 @@ def app(fake: FakeAnswerer, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     monkeypatch.setattr(ui, "corpus_boundary", lambda: CORPUS)
     monkeypatch.setattr(ui, "check_health", lambda settings: [])
     return AppTest.from_file(APP, default_timeout=60)
+
+
+def test_a_deployment_with_no_index_downloads_it_without_crashing(
+    fake: FakeAnswerer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fresh-deploy path, which never runs locally because the index is already there.
+
+    Streamlit hashes every argument of a cached function it is not told to skip, and the
+    progress callback is a closure over a placeholder widget. Passing it crashed the live
+    deployment on first start with UnhashableParamError, where a local run - index present,
+    branch skipped - could not have shown it.
+    """
+    import citara.ui.app as ui
+
+    monkeypatch.setattr(ui, "load_answerer", lambda: fake)
+    monkeypatch.setattr(ui, "corpus_boundary", lambda: CORPUS)
+    monkeypatch.setattr(ui, "check_health", lambda settings: [])
+    monkeypatch.setenv("CITARA_INDEX_URL", "https://example.invalid/index.tar.gz")
+    monkeypatch.setattr(ui.fetch, "index_present", lambda settings: False)
+
+    asked: list[object] = []
+
+    def ensure_index(settings: object, on_progress: object = None) -> bool:
+        asked.append(on_progress)
+        return True
+
+    monkeypatch.setattr(ui.fetch, "ensure_index", ensure_index)
+    ui.fetch_index.clear()
+    get_settings.cache_clear()
+
+    at = AppTest.from_file(APP, default_timeout=60).run()
+
+    assert not at.exception, [str(e) for e in at.exception]
+    # The callback still reaches the downloader; it is only kept out of the cache key.
+    assert asked and callable(asked[0])
 
 
 def markdown_blocks(at: AppTest) -> list[str]:
