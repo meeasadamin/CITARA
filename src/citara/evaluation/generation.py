@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from citara.config import Settings
-from citara.evaluation.judge import Judge
+from citara.evaluation.judge import Judge, declines
 from citara.evaluation.metrics import mean, percentile
 from citara.evaluation.models import GoldQuestion, GoldSet
 from citara.generation.models import GeneratedAnswer
@@ -77,6 +77,7 @@ class QuestionResult:
     generation_ms: float = 0.0
     cited_sources: int = 0
     fully_cited: bool = False
+    declined: bool = False
     error: str = ""
     # Kept so a surprising score can be read back against the answer that earned it, and so
     # the same answers can be put to a second judge without generating them again.
@@ -113,6 +114,7 @@ class QuestionResult:
             "generation_ms": self.generation_ms,
             "cited_sources": self.cited_sources,
             "fully_cited": self.fully_cited,
+            "declined": self.declined,
             "error": self.error,
             "answer_text": self.answer_text,
             "evidence_citations": list(self.evidence_citations),
@@ -159,24 +161,40 @@ class GenerationReport:
     @property
     def wrongly_answered(self) -> list[QuestionResult]:
         """Questions the corpus cannot answer, answered anyway: the failure that matters most."""
-        return [r for r in self.refusal_cases if r.answered]
+        return [r for r in self.refusal_cases if r.answered and not r.declined]
+
+    @property
+    def declined_on_evidence(self) -> list[QuestionResult]:
+        """The third outcome: evidence cleared the gate, and the model read it and said no.
+
+        These reach a model and come back as prose, so they look like answers, but they
+        assert nothing. Scoring one for faithfulness is trivially a 1.0 - "the evidence does
+        not contain X" cannot contradict the evidence - so counting them would report the
+        system's misses as its best results.
+        """
+        return [r for r in self.results if r.answered and r.declined]
+
+    @property
+    def substantive(self) -> list[QuestionResult]:
+        """Answers that actually answered: what faithfulness and relevance are measured over."""
+        return [r for r in self.results if r.answered and not r.declined]
 
     # -- the numbers ---------------------------------------------------------------------
 
     @property
     def faithfulness(self) -> float | None:
-        return mean([r.faithfulness for r in self.scored])
+        return mean([r.faithfulness for r in self.substantive])
 
     @property
     def relevance(self) -> float | None:
-        return mean([r.relevance for r in self.scored])
+        return mean([r.relevance for r in self.substantive])
 
     @property
     def fully_cited_rate(self) -> float | None:
-        scored = self.scored
-        if not scored:
+        substantive = self.substantive
+        if not substantive:
             return None
-        return sum(1 for r in scored if r.fully_cited) / len(scored)
+        return sum(1 for r in substantive if r.fully_cited) / len(substantive)
 
     @property
     def untimed(self) -> list[QuestionResult]:
@@ -204,6 +222,8 @@ class GenerationReport:
             "relevance": self.relevance,
             "fully_cited_rate": self.fully_cited_rate,
             "answered": len(self.scored),
+            "substantive": [r.id for r in self.substantive],
+            "declined_on_evidence": [r.id for r in self.declined_on_evidence],
             "wrongly_refused": [r.id for r in self.wrongly_refused],
             "wrongly_answered": [r.id for r in self.wrongly_answered],
             "latency_p50": self.latency(0.5),
@@ -246,6 +266,11 @@ def score_answer(
     judge: Judge, question: GoldQuestion, answer: GeneratedAnswer, result: QuestionResult
 ) -> None:
     """Fill *result* with the judge's two verdicts, leaving it usable if either fails."""
+    # Read first, without spending a request: an answer that declines on its evidence is a
+    # third outcome and not something faithfulness or relevance should average. The judge is
+    # asked as well and either signal is enough, so a failed relevance call cannot hide one.
+    result.declined = declines(answer.text)
+
     # A judge that cannot be reached, or replies with something unreadable, is one lost score
     # rather than a lost run: the questions before it have already been paid for. JudgeUnavailable
     # covers an unreadable reply; the provider raises its own errors for a timeout or a quota.
@@ -261,7 +286,9 @@ def score_answer(
             extra={"question": question.id, "error": str(error)[:200]},
         )
     try:
-        result.relevance = judge.relevance(question.question, answer.text).score
+        verdict = judge.relevance(question.question, answer.text)
+        result.relevance = verdict.score
+        result.declined = result.declined or verdict.declined
     except Exception as error:
         result.error = f"{result.error}; relevance: {error}".lstrip("; ")
         log.warning(
@@ -342,18 +369,50 @@ def _number(value: float | None, places: int = 3) -> str:
     return "n/a" if value is None else f"{value:.{places}f}"
 
 
+def _outcome_table(report: GenerationReport) -> list[str]:
+    """What happened to each answerable question, before any score is quoted.
+
+    The quality columns only describe the answers the system actually gave, so how often it
+    gave one belongs above them rather than in a footnote.
+    """
+    answerable = [r for r in report.answerable if r.mode]
+    substantive = [r for r in report.substantive if r.answerable]
+    declined = [r for r in report.declined_on_evidence if r.answerable]
+    refused = report.wrongly_refused
+    total = len(answerable)
+    if not total:
+        return []
+
+    def share(rows: list[QuestionResult]) -> str:
+        return f"{len(rows)} of {total} ({len(rows) / total:.0%})"
+
+    return [
+        "## What happened to the answerable questions",
+        "",
+        "| Outcome | Count | What it means |",
+        "|---|---|---|",
+        f"| Answered | {share(substantive)} | evidence cleared the gate and the answer "
+        "addressed the question |",
+        f"| Declined on the evidence | {share(declined)} | evidence cleared the gate, and the "
+        "model read it and said it did not contain the answer |",
+        f"| Refused at the gate | {share(refused)} | nothing scored above the relevance floor, "
+        "so no model was called |",
+        "",
+    ]
+
+
 def _summary_table(report: GenerationReport) -> list[str]:
     p50, p95 = report.latency(0.5), report.latency(0.95)
     timed = len([r for r in report.results if r.mode and r.timed])
-    scored = report.scored
-    faithful_n = sum(1 for r in scored if r.faithfulness is not None)
-    relevant_n = sum(1 for r in scored if r.relevance is not None)
+    substantive = report.substantive
+    faithful_n = sum(1 for r in substantive if r.faithfulness is not None)
+    relevant_n = sum(1 for r in substantive if r.relevance is not None)
     return [
         "| Measure | Value | Over |",
         "|---|---|---|",
         f"| Faithfulness | {_number(report.faithfulness)} | {faithful_n} answers |",
         f"| Answer relevance | {_number(report.relevance)} | {relevant_n} answers |",
-        f"| Fully cited | {_number(report.fully_cited_rate)} | {len(scored)} answers |",
+        f"| Fully cited | {_number(report.fully_cited_rate)} | {len(substantive)} answers |",
         f"| Retrieval p50 / p95 | {p50['retrieval_ms']:.0f} ms / {p95['retrieval_ms']:.0f} ms | "
         f"{timed} timed questions |",
         f"| Generation p50 / p95 | {p50['generation_ms']:.0f} ms / "
@@ -365,7 +424,7 @@ def _summary_table(report: GenerationReport) -> list[str]:
 
 def _category_table(report: GenerationReport) -> list[str]:
     categories: dict[str, list[QuestionResult]] = {}
-    for result in report.scored:
+    for result in report.substantive:
         categories.setdefault(result.category, []).append(result)
     if not categories:
         return []
@@ -388,7 +447,7 @@ def _interpretation(report: GenerationReport) -> list[str]:
     """State what the numbers show, computed from the numbers themselves."""
     notes: list[str] = []
     faithfulness = report.faithfulness
-    scored = report.scored
+    scored = report.substantive
 
     if faithfulness is not None and scored:
         judged = [r for r in scored if r.faithfulness is not None]
@@ -451,6 +510,7 @@ def render_markdown(report: GenerationReport, gold: GoldSet) -> str:
         f"- Configuration fingerprint: `{report.fingerprint}`.",
         f"- Run: {report.generated_at}.",
         "",
+        *_outcome_table(report),
         *_summary_table(report),
         "",
     ]
@@ -458,7 +518,7 @@ def render_markdown(report: GenerationReport, gold: GoldSet) -> str:
     lines += ["", "## What the numbers show", ""]
     lines += [f"- {note}" for note in _interpretation(report)]
 
-    unsupported = [(r.id, claim) for r in report.scored for claim in r.unsupported]
+    unsupported = [(r.id, claim) for r in report.substantive for claim in r.unsupported]
     if unsupported:
         lines += [
             "",
@@ -483,7 +543,7 @@ def render_markdown(report: GenerationReport, gold: GoldSet) -> str:
     else:
         listed = (
             "every unsupported claim is listed below rather than only counted"
-            if any(r.unsupported for r in report.scored)
+            if any(r.unsupported for r in report.substantive)
             else "the run record keeps every answer it judged, and any verdict can be read back"
         )
         lines += [

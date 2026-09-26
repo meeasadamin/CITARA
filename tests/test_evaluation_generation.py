@@ -18,6 +18,7 @@ from citara.evaluation.judge import (
     FaithfulnessScore,
     Judge,
     JudgeUnavailable,
+    declines,
     parse_json_object,
 )
 from citara.evaluation.metrics import mean, percentile
@@ -422,6 +423,84 @@ def test_a_timing_that_cannot_be_true_is_named_rather_than_averaged() -> None:
     # Its score still counts: the clock was wrong, the answer was not.
     assert len(report.scored) == 2
     assert "a2" in render_markdown(report, gold)
+
+
+def test_the_phrasings_the_prompt_asks_for_are_recognised() -> None:
+    """The assistant is told to say so plainly when the evidence falls short; it varies."""
+    assert declines("The provided evidence does not contain the total housing damages.")
+    assert declines("Based on the provided evidence, the text does not state what countries.")
+    assert declines("Based on the provided evidence, there is no mention of what people should do.")
+    assert declines("The documents do not specify a threshold for Gwadar.")
+
+
+def test_a_real_answer_is_not_mistaken_for_a_decline() -> None:
+    """A false positive throws away a real answer, so the detector stays narrow."""
+    assert not declines("GLOF stands for Glacial Lake Outburst Flood [1].")
+    assert not declines("NDMA treats 1 July to 30 September as the monsoon season [1][2].")
+    assert not declines("The plan states that no district may deploy without NDMA tasking [1].")
+
+
+def test_an_answer_that_declines_is_counted_apart_from_the_ones_that_answered() -> None:
+    """ "The evidence does not contain X" cannot contradict its evidence, so it scores 1.0."""
+    gold = gold_set()
+    answerer = ScriptedAnswerer(
+        {
+            gold.questions[0].question: generated("35,000 died [1]."),
+            gold.questions[1].question: generated(
+                "The provided evidence does not contain the dissemination steps."
+            ),
+            gold.questions[2].question: refused(),
+        }
+    )
+    report = run_generation(
+        answerer,
+        ScriptedJudge(),
+        gold,
+        Settings(_env_file=None),  # type: ignore[call-arg]
+    )
+
+    assert [r.id for r in report.substantive] == ["a1"]
+    assert [r.id for r in report.declined_on_evidence] == ["a2"]
+    # Averaged over the answer that answered, not over both.
+    assert report.faithfulness == 1.0
+    assert sum(1 for r in report.substantive if r.faithfulness is not None) == 1
+
+
+def test_declining_on_an_unanswerable_question_is_not_a_wrong_answer() -> None:
+    """The gate let the evidence through and the model still said no. That is correct."""
+    gold = gold_set()
+    answerer = ScriptedAnswerer(
+        {
+            gold.questions[0].question: generated(),
+            gold.questions[1].question: generated(),
+            gold.questions[2].question: generated(
+                "The provided evidence does not contain a Gwadar threshold."
+            ),
+        }
+    )
+    report = run_generation(
+        answerer,
+        ScriptedJudge(),
+        gold,
+        Settings(_env_file=None),  # type: ignore[call-arg]
+    )
+    assert report.wrongly_answered == []
+    assert [r.id for r in report.declined_on_evidence] == ["u1"]
+
+
+def test_the_artifact_leads_with_how_often_it_answered_at_all() -> None:
+    answered = scored_result("a1", 1.0, 1.0)
+    declined = QuestionResult(
+        id="a2", question="q", category="table", answerable=True, mode="generated", declined=True
+    )
+    missed = QuestionResult(
+        id="a3", question="q", category="table", answerable=True, mode="refused"
+    )
+    markdown = render_markdown(report_with([answered, declined, missed]), gold_set())
+
+    assert "What happened to the answerable questions" in markdown
+    assert "Declined on the evidence" in markdown
+    assert "1 of 3 (33%)" in markdown
 
 
 # -- the artifact ------------------------------------------------------------------------------

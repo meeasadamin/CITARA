@@ -133,6 +133,49 @@ The cold start was a separate problem, and it was fixed. Before the models were 
 startup, the first question took 48.9 s, nearly all of it loading the embedder and
 cross-encoder. After an explicit warm-up it took 3.9 s.
 
+## How far down the list should the cross-encoder look?
+
+The pipeline pools 24 fused candidates but the cross-encoder only ever scored the top 5, so
+anything fusion ranked sixth or lower could never be promoted however well it answered the
+question. That looked like the obvious cause of the refusal rate, and it was worth measuring
+before believing. `retrieval.rerank_window` makes it a setting; the sweep is in
+[`runs/rerank_window.json`](runs/rerank_window.json).
+
+| Window | Hit@1 | Hit@3 | Hit@5 | MRR | p50 | p95 | Unanswerable over the floor |
+|---|---|---|---|---|---|---|---|
+| **5 (shipped)** | 0.167 | 0.292 | **0.458** | 0.255 | **2.8 s** | 3.6 s | 0 of 6 |
+| 8 | 0.167 | 0.208 | 0.375 | 0.229 | 4.9 s | 5.6 s | 0 of 6 |
+| 12 | 0.167 | 0.250 | 0.333 | 0.222 | 7.2 s | 7.5 s | 0 of 6 |
+| 16 | 0.208 | 0.292 | 0.333 | 0.251 | 13.9 s | 24.1 s | 0 of 6 |
+| 24 | 0.208 | 0.333 | 0.375 | 0.272 | 22.9 s | 28.6 s | 0 of 6 |
+
+**The hypothesis was wrong, and the window stays at 5.** Giving the cross-encoder more to look
+at makes Hit@5 *worse* - 0.458 down to 0.333 - while costing eight times the latency. Only MRR
+creeps up, by 0.017, which is well inside the noise of a 24-question set where one question
+moves Hit@5 by 0.042.
+
+The reason is the finding this project already had, now confirmed from the other direction:
+this cross-encoder is a good admissibility gate and a poor ranker on this corpus. Asked to
+order more candidates, it promotes chunks that are topically close to the question over the
+page that actually answers it, pushing the gold page out of the top 5. Its value is a
+calibrated score, not an ordering, which is exactly why the shipped configuration uses it as
+the gate and lets dense similarity do the ranking.
+
+The setting is kept rather than removed, so the claim stays testable and this table can be
+regenerated rather than taken on trust.
+
+**Where the refusals actually come from, then.** Not from reranking. Classifying every
+answerable question by where it loses - gold page retrieved or not, best score above the floor
+or not - puts 5 of them in the "nothing relevant retrieved at all" bucket, with best scores of
+0.06 to 0.12: the candidate pool never contained the answer, so no amount of reordering could
+have found it. That points at the retriever's own reach (`dense_k` / `sparse_k`, both 12) and
+at chunking, not at the gate. It is the open question this project has not answered.
+
+**Rewriting is not the problem either.** The two follow-up questions rewrite cleanly -
+"What about Sindh?" becomes "What were the total recovery needs in Sindh after the 2022
+floods?" and "And which months does that cover?" becomes "Which months does NDMA's monsoon
+contingency plan cover?" - and still miss. The failure is downstream of the rewrite.
+
 ## Judging the answers
 
 [GENERATION.md](GENERATION.md) reports faithfulness and answer relevance, both scored by a
@@ -159,11 +202,23 @@ see it is the Hit@k table.
 
 ### What the first run showed
 
-Thirteen of the 24 answerable questions were answered and 11 were refused, which is the Hit@5 of
-0.458 in [ABLATION.md](ABLATION.md) seen from the other end: when the right page does not clear
-the floor, the system says so instead of guessing. All 6 unanswerable questions were refused.
-Of the 13 answers, every claim in all 13 was supported by its evidence, and every answer was
-fully cited.
+There are three outcomes, not two, and the difference matters enough that the artifact now
+leads with it. **Six of the 24 answerable questions got a real answer.** Eleven were refused at
+the gate, where nothing cleared the relevance floor and no model was called. The other seven
+reached a model, which read the evidence and said it did not contain the answer - which the
+system prompt explicitly instructs ("if the evidence does not contain the answer, say so
+plainly and stop"), so this is the second safety net working, not a malfunction.
+
+Counting those seven as answers is what the first version of this harness did, and it flattered
+every column: a sentence saying the evidence lacks something cannot contradict that evidence, so
+it scores a free 1.000 on faithfulness. Worse, the relevance prompt had been written to score a
+refusal 1.0, so they were being rewarded twice. Both are fixed: the judge is asked to flag a
+declining answer, a narrow text detector catches the phrasings independently in case the judge
+call fails, and the quality columns are averaged over the answers that answered.
+
+Over those six: every claim supported by its evidence, every answer fully cited, relevance 1.000
+over the five the judge scored. All 6 unanswerable questions were refused. The system's honesty
+holds all the way through - what it lacks is reach, not discipline.
 
 Two timings in that run are not measurements. The laptop suspended twice overnight while the
 suite was running, and Python's elapsed-time counter carries the sleep, so two questions

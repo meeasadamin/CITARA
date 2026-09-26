@@ -153,17 +153,18 @@ class HybridRetriever:
             outcome.candidates_considered = len(candidates)
             outcome.retrieval_ms = round((time.perf_counter() - started) * 1000, 1)
 
-            selected = candidates[: config.top_k]
-
-            # Measured on the gold set: this cross-encoder barely reorders these candidates
-            # (Hit@5 0.375 -> 0.417, MRR 0.249 -> 0.274, within noise at n=24) but separates
-            # answerable from unanswerable questions cleanly (median 0.92 against 0.077). It
-            # therefore serves as the admissibility gate rather than the ranker, and scoring
-            # only the chunks about to be served cuts its cost by roughly five times.
-            if config.mode == "hybrid_rerank" and selected:
+            # The cross-encoder separates answerable questions from unanswerable ones cleanly
+            # (median 0.92 against 0.077), which is what makes refusal possible. How far down
+            # the fused list it looks is rerank_window: whatever it does not score keeps its
+            # fusion rank, so a chunk that fusion put below the window cannot be promoted no
+            # matter how well it answers the question.
+            if config.mode == "hybrid_rerank" and candidates:
                 rerank_started = time.perf_counter()
-                selected = self.reranker.rerank(dense_query, selected)
+                window = self.reranker.rerank(dense_query, candidates[: config.rerank_window])
+                selected = (window + candidates[config.rerank_window :])[: config.top_k]
                 outcome.rerank_ms = round((time.perf_counter() - rerank_started) * 1000, 1)
+            else:
+                selected = candidates[: config.top_k]
 
             outcome.best_score = selected[0].score if selected else None
 

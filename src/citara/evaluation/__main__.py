@@ -36,7 +36,7 @@ from citara.evaluation.generation import (
 )
 from citara.evaluation.generation import render_markdown as render_generation
 from citara.evaluation.gold import load_gold_set
-from citara.evaluation.judge import JudgeUnavailable, build_judge
+from citara.evaluation.judge import JudgeUnavailable, build_judge, declines
 from citara.evaluation.models import GoldSet
 from citara.log import configure_logging, get_logger
 
@@ -147,6 +147,11 @@ def _report_from_record(payload: dict[str, object]) -> GenerationReport:
                 generation_ms=row.get("generation_ms", 0.0),
                 cited_sources=row.get("cited_sources", 0),
                 fully_cited=row.get("fully_cited", False),
+                # Derived when absent, so a run recorded before the third outcome was
+                # recognised re-renders with it rather than keeping the flattering numbers.
+                declined=row.get("declined", declines(str(row.get("answer_text", "")))),
+                answer_text=str(row.get("answer_text", "")),
+                evidence_citations=tuple(row.get("evidence_citations", ())),
                 error=row.get("error", ""),
             )
         )

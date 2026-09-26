@@ -59,18 +59,21 @@ Reply with JSON only, in this shape:
 _RELEVANCE_SYSTEM = """You judge whether an answer addresses the question that was asked.
 
 You are not checking whether the answer is true, and you are not checking its sources. A
-truthful answer to a different question is a bad answer. A refusal that explains why the
-question cannot be answered from the available documents is addressing the question, and
-scores 1.0.
+truthful answer to a different question is a bad answer.
 
-Score on this scale, and use only these three values:
+First decide whether the answer declines. An answer declines when it says the documents or
+the evidence do not contain what was asked, instead of answering it. Saying so is the honest
+thing to do when the evidence is thin, but it is not an answer to the question, so a declined
+answer always scores 0.0 and is reported separately.
+
+Otherwise score on this scale, and use only these three values:
 - 1.0 - answers the question that was asked, completely.
 - 0.5 - addresses the question but leaves a substantial part of it unanswered, or answers a
   narrower or broader question than the one asked.
 - 0.0 - does not address the question.
 
 Reply with JSON only, in this shape:
-{"score": 1.0, "why": "<one short sentence>"}"""
+{"score": 1.0, "declined": false, "why": "<one short sentence>"}"""
 
 # Judging is a bigger request than answering: the judge reads every retrieved passage as
 # well as the answer, where the assistant only writes a capped reply. The assistant's 30 s
@@ -82,6 +85,32 @@ _JUDGE_MAX_TOKENS = 3072
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 _OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+
+
+# The assistant is told: "If the evidence does not contain the answer, say so plainly and
+# stop." It complies in a narrow band of phrasings, and this recognises them when the judge
+# is not there to. Deliberately narrow - a false positive would throw away a real answer, so
+# anything it is unsure of is left for the judge to call.
+_ABSENT = (
+    r"(?:doe?s? not (?:contain|include|specify|provide|mention|state|detail)"
+    r"|there (?:is|are) no (?:mention|information|reference|details?|indication))"
+)
+_SOURCE = r"(?:evidence|documents?|corpus|passages?|the text)"
+# Either order: "the evidence does not contain X", or "there is no mention of X in the text".
+_DECLINES = re.compile(
+    rf"{_SOURCE}[^.]{{0,90}}?{_ABSENT}|{_ABSENT}[^.]{{0,90}}?in the (?:provided )?{_SOURCE}",
+    re.IGNORECASE,
+)
+
+
+def declines(answer: str) -> bool:
+    """True when the answer says its evidence does not hold what was asked.
+
+    This is a third outcome, not a bad answer: the retrieval gate let the evidence through
+    and the model, reading it, declined. Counting it as an answer would report a miss as a
+    success in every column.
+    """
+    return bool(_DECLINES.search(answer))
 
 
 class JudgeUnavailable(RuntimeError):
@@ -143,10 +172,17 @@ class FaithfulnessScore:
 
 @dataclass(frozen=True)
 class RelevanceScore:
-    """How well an answer addressed the question, on the three-point scale."""
+    """How well an answer addressed the question, on the three-point scale.
+
+    ``declined`` marks the third outcome this system has. The retrieval gate refuses before
+    any model call; the model can also look at evidence that cleared the gate and say it does
+    not contain the answer. That is the prompt working as written, but it is not an answer,
+    and averaging it in either column would count a miss as a success.
+    """
 
     score: float
     why: str = ""
+    declined: bool = False
 
 
 def _passages(evidence: list[tuple[str, str]]) -> str:
@@ -201,7 +237,12 @@ class Judge:
         # Snapped to the scale it was given rather than trusted: a judge that answers 0.85 has
         # ignored the instruction, and averaging its improvisation would blur the measurement.
         score = min((1.0, 0.5, 0.0), key=lambda point: abs(point - raw))
-        return RelevanceScore(score=score, why=str(payload.get("why", "")).strip())
+        declined = bool(payload.get("declined", False)) or declines(answer)
+        return RelevanceScore(
+            score=0.0 if declined else score,
+            why=str(payload.get("why", "")).strip(),
+            declined=declined,
+        )
 
     def _ask(self, system: str, user: str) -> str:
         return self.provider.generate(system, user)

@@ -237,6 +237,15 @@ class RetrievalSettings(BaseModel):
         default=24, gt=0, description="Shortlist size handed to the cross-encoder."
     )
     top_k: int = Field(default=5, gt=0, description="Evidence chunks passed to the LLM.")
+    rerank_window: int = Field(
+        default=5,
+        gt=0,
+        description=(
+            "How many fused candidates the cross-encoder scores. Anything ranked below "
+            "this by fusion can never be promoted, however well it answers the question, "
+            "so this is the ceiling on what reranking can repair."
+        ),
+    )
     reranker_model: str = "BAAI/bge-reranker-base"
     reranker_batch_size: int = Field(default=16, gt=0)
     relevance_floor: float = Field(
@@ -275,6 +284,10 @@ class RetrievalSettings(BaseModel):
             raise ValueError("at least one of dense_weight / sparse_weight must be positive")
         if self.top_k > self.rerank_candidates:
             raise ValueError("top_k cannot exceed rerank_candidates")
+        if self.rerank_window < self.top_k:
+            raise ValueError("rerank_window cannot be smaller than top_k")
+        if self.rerank_window > self.rerank_candidates:
+            raise ValueError("rerank_window cannot exceed rerank_candidates")
         if self.rerank_candidates > self.dense_k + self.sparse_k:
             raise ValueError("rerank_candidates cannot exceed the pooled candidate count")
         return self
