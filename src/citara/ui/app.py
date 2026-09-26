@@ -17,6 +17,7 @@ import os
 import threading
 import uuid
 from datetime import UTC, datetime
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -244,6 +245,32 @@ def adopt_streamlit_secrets() -> list[str]:
     return adopted
 
 
+@cache
+def build_id() -> str:
+    """Short identifier for the code actually running, read without invoking git.
+
+    A hosted deployment shows only its page, and twice now the real question behind a failure
+    was whether the commit on screen was the commit that was pushed - answerable before only
+    by comparing traceback line numbers against the repository. Falls back to the source
+    file's date where there is no checkout to read, which is enough to tell two builds apart.
+    """
+    root = Path(__file__).resolve().parents[3]
+    try:
+        head = (root / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+        sha = head
+        if head.startswith("ref: "):
+            sha = (root / ".git" / head[5:]).read_text(encoding="utf-8").strip()
+        if sha:
+            return sha[:7]
+    except OSError:
+        pass
+    try:
+        stamp = datetime.fromtimestamp(Path(__file__).stat().st_mtime, UTC)
+        return stamp.strftime("%Y-%m-%d")
+    except OSError:
+        return "unknown"
+
+
 def main() -> None:
     # Before the first get_settings(), which caches what it reads for the whole process.
     adopted = adopt_streamlit_secrets()
@@ -349,7 +376,7 @@ def _footer(corpus: Corpus, settings: Settings) -> None:
             built = str(json.loads(manifest.read_text(encoding="utf-8")).get("built_at", ""))
         except (OSError, ValueError):
             built = ""
-    st.markdown(markup.footer(corpus, built, REPOSITORY), unsafe_allow_html=True)
+    st.markdown(markup.footer(corpus, built, REPOSITORY, build_id()), unsafe_allow_html=True)
 
 
 def _show_problem(problem: health.Problem) -> None:

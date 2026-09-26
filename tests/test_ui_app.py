@@ -204,6 +204,29 @@ def test_no_secrets_file_is_the_normal_local_case(monkeypatch: pytest.MonkeyPatc
     assert ui.adopt_streamlit_secrets() == []
 
 
+def test_the_missing_key_message_says_what_the_process_can_see(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Several different causes look identical from the page; this separates them."""
+    for name in ("GOOGLE_API_KEY", "GROQ_API_KEY", "CITARA_GOOGLE_API_KEY", "CITARA_GROQ_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert "none of these variables" in health.key_sources()
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "set-but-perhaps-wrong")
+    assert "GOOGLE_API_KEY" in health.key_sources()
+    assert "empty or invalid" in health.key_sources()
+
+
+def test_the_page_names_the_commit_it_is_running() -> None:
+    """A deployment shows only its page; "is this the code I pushed?" must be answerable."""
+    import citara.ui.app as ui
+
+    ui.build_id.cache_clear()
+    identifier = ui.build_id()
+    assert identifier and identifier != "unknown"
+    assert len(identifier) <= 10
+
+
 def markdown_blocks(at: AppTest) -> list[str]:
     return [str(element.value) for element in at.markdown]
 

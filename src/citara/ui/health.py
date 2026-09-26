@@ -16,6 +16,25 @@ from citara.config import Settings
 
 Severity = Literal["error", "warning", "info"]
 
+_KEY_NAMES = ("GOOGLE_API_KEY", "GROQ_API_KEY", "CITARA_GOOGLE_API_KEY", "CITARA_GROQ_API_KEY")
+
+
+def key_sources() -> str:
+    """What the process can actually see, for a deployment nobody can open a shell on.
+
+    A missing key has several quite different causes that look identical from the page: the
+    secret was never saved, it was saved under a ``[section]`` the host does not export, or
+    the running code is an older commit than the one that reads it. Naming which of the key
+    variables are present - never their values - separates those in one glance instead of
+    another round of guessing.
+    """
+    import os
+
+    present = [name for name in _KEY_NAMES if os.environ.get(name, "").strip()]
+    if present:
+        return f"The process can see {', '.join(present)}, so the value may be empty or invalid."
+    return "The process can see none of these variables, so nothing reached it."
+
 
 @dataclass(frozen=True)
 class Problem:
@@ -92,7 +111,7 @@ def check(settings: Settings) -> list[Problem]:
                 "No language-model key is configured",
                 "Answers will show the most relevant source passages with their citations, but "
                 "no written summary. Add GOOGLE_API_KEY (and GROQ_API_KEY for failover) to `.env` "
-                "locally, or to the app's Secrets when deployed, then restart.",
+                f"locally, or to the app's Secrets when deployed, then restart. {key_sources()}",
             )
         )
     elif settings.groq_api_key is None or not settings.resilience.enable_failover:

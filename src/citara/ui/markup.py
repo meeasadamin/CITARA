@@ -247,15 +247,22 @@ def header(subtitle: str, disclaimer: str, mark: str) -> str:
     )
 
 
-def footer(corpus: Corpus, built_at: str, repository: str) -> str:
-    """Site footer: what the assistant knows, where the code is, and what it is not."""
+def footer(corpus: Corpus, built_at: str, repository: str, build: str = "") -> str:
+    """Site footer: what the assistant knows, where the code is, and what it is not.
+
+    *build* identifies the running code. On a hosted deployment the page is the only thing
+    anyone can see, and "is this the commit I pushed?" turned out to be the question behind
+    two separate failures - answerable before only by comparing line numbers in a traceback
+    against the repository.
+    """
     built = f' · index built <time datetime="{escape(built_at)}">{escape(built_at[:10])}</time>'
+    running = f' · build <code class="build">{escape(build)}</code>' if build else ""
     return (
         '<footer class="citara-footer">'
         f"<p><strong>CITARA</strong> answers only from the indexed NDMA documents and cites the "
         f"page behind every claim. Verify against the cited page before acting.</p>"
         f"<p>{len(corpus.searchable)} documents · {corpus.searchable_pages:,} of "
-        f"{corpus.total_pages:,} pages searchable{built if built_at else ''}</p>"
+        f"{corpus.total_pages:,} pages searchable{built if built_at else ''}{running}</p>"
         f'<p><a href="{escape(repository)}" rel="noopener noreferrer" target="_blank">Source code '
         f"and evaluation</a> · MIT licence · Independent prototype, not an official NDMA "
         f"system</p></footer>"

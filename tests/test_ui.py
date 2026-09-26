@@ -566,3 +566,11 @@ def test_the_corpus_list_folds_away_behind_its_totals() -> None:
     assert '<summary class="corpus-summary">Show all 2 documents</summary>' in html
     assert "Plan A (2026)" in html and "18 of 20 pages" in html
     assert "2 scanned pages not searchable" in html
+
+
+def test_the_footer_carries_the_build_when_given_one() -> None:
+    corpus = Corpus(documents=[CorpusDocument("a", "Plan A", 2026, 40, 40, 100)])
+    assert "build" in markup.footer(corpus, "2026-09-18", "https://example.test", "abc1234")
+    assert "abc1234" in markup.footer(corpus, "2026-09-18", "https://example.test", "abc1234")
+    # Omitted rather than shown empty when there is nothing to report.
+    assert "build" not in markup.footer(corpus, "2026-09-18", "https://example.test")
